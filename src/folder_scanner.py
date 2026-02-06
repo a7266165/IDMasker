@@ -72,7 +72,7 @@ def inspect_folder_files(folder_path: str) -> dict:
         ext = f.suffix.lower()
         if ext == ".jpg" or ext == ".jpeg":
             jpg_count += 1
-        elif ext == ".json":
+        elif ext == ".json" or ext == ".jsonl":
             has_json = True
         elif ext == ".edf":
             has_edf = True

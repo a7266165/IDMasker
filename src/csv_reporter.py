@@ -17,8 +17,8 @@ def generate_summary_csv(results: list[dict], password: str, csv_path: str) -> N
     產生 summary.csv（加密總報告）
 
     若檔案已存在則追加新資料列，不覆寫舊紀錄。
-    欄位: 原始病例編號、資料夾日期、加密後檔名、使用密碼、
-          JPG數量、有JSON、有EDF、加密時間
+    欄位: 原始病例編號、日期、時分、加密前檔名、加密後檔名、
+          使用密碼、JPG數量、有JSON、有EDF、加密時間
     """
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     file_exists = Path(csv_path).exists() and Path(csv_path).stat().st_size > 0
@@ -29,7 +29,9 @@ def generate_summary_csv(results: list[dict], password: str, csv_path: str) -> N
         if not file_exists:
             writer.writerow([
                 "原始病例編號",
-                "資料夾日期",
+                "日期",
+                "時分",
+                "加密前檔名",
                 "加密後檔名",
                 "使用密碼",
                 "JPG數量",
@@ -43,9 +45,12 @@ def generate_summary_csv(results: list[dict], password: str, csv_path: str) -> N
                 continue
 
             file_info = r.get("file_info") or {}
+            datetime_str = r["datetime_str"]  # YYYYMMDDHHMI
             writer.writerow([
                 r["case_id"],
-                r["datetime_str"],
+                datetime_str[:8],
+                datetime_str[8:],
+                r["old_name"],
                 r["new_name"],
                 password,
                 file_info.get("jpg_count", 0),
