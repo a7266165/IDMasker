@@ -18,7 +18,9 @@ class IDMaskerApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("IDMasker 去識別化工具")
-        self.root.resizable(False, False)
+        self.root.geometry("680x700")
+        self.root.minsize(520, 600)
+        self.root.resizable(True, True)
 
         self.scanned_folders: list[str] = []
         self.check_vars: list[tk.BooleanVar] = []
@@ -26,8 +28,12 @@ class IDMaskerApp:
         self._build_ui()
 
     def _build_ui(self):
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
+
         main = ttk.Frame(self.root, padding=16)
         main.grid(sticky="nsew")
+        main.columnconfigure(0, weight=1)
 
         row = 0
 
@@ -97,6 +103,7 @@ class IDMaskerApp:
 
         list_frame = ttk.Frame(main)
         list_frame.grid(row=row, column=0, sticky="nsew", pady=(0, 8))
+        main.rowconfigure(row, weight=1)
 
         self.canvas = tk.Canvas(list_frame, height=180, borderwidth=1, relief="sunken")
         scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.canvas.yview)

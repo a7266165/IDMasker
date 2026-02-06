@@ -19,10 +19,11 @@ class TestFolderNameTransform:
 
     def test_encrypt_folder_name(self):
         result = encrypt_folder_name("12345678202602060821", KEY)
-        assert len(result) == 22
+        assert len(result) == 25
         assert result[:12] == "202602060821"
-        assert result[12:16].isalpha()
-        assert result[16:].isdigit()
+        assert result[12] == "_"
+        assert result[13:21].isalpha()
+        assert result[21:] == "5678"  # 末 4 碼保留
 
     def test_decrypt_folder_name_roundtrip(self):
         original = "12345678202602060821"
@@ -40,6 +41,12 @@ class TestFolderNameTransform:
             encrypted = encrypt_folder_name(original, KEY)
             decrypted = decrypt_folder_name(encrypted, KEY)
             assert decrypted == original
+
+    def test_last_four_preserved_in_folder_name(self):
+        """資料夾加密後末 4 碼應與原始 ID 末 4 碼一致"""
+        original = "12345678202602060821"
+        encrypted = encrypt_folder_name(original, KEY)
+        assert encrypted[-4:] == "5678"
 
 
 class TestScanFolders:
@@ -62,8 +69,8 @@ class TestScanFolders:
         assert "00000001202601150930" in results
 
     def test_scan_for_decryption(self, temp_dir):
-        (temp_dir / "202602060821AbCd123456").mkdir()
-        (temp_dir / "202601150930XyZw000001").mkdir()
+        (temp_dir / "202602060821_AbCdEfGh1234").mkdir()
+        (temp_dir / "202601150930_XyZwAbCd0001").mkdir()
         results = scan_for_decryption(str(temp_dir))
         assert len(results) == 2
 

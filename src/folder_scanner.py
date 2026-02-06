@@ -14,8 +14,8 @@ from src.crypto import derive_key, encrypt_id, decrypt_id
 # 原始格式：20 碼純數字（前8碼ID + 後12碼日期時間）
 PATTERN_ORIGINAL = re.compile(r"^\d{20}$")
 
-# 加密格式：12碼數字 + 4英文 + 6數字 = 22碼
-PATTERN_ENCRYPTED = re.compile(r"^\d{12}[A-Za-z]{4}\d{6}$")
+# 加密格式：12碼數字 + _ + 8英文 + 4數字 = 25碼
+PATTERN_ENCRYPTED = re.compile(r"^\d{12}_[A-Za-z]{8}\d{4}$")
 
 
 def scan_for_encryption(parent_dir: str) -> list[str]:
@@ -89,7 +89,7 @@ def encrypt_folder_name(folder_name: str, key: bytes) -> str:
         key: 由 derive_key() 衍生的金鑰
 
     Returns:
-        加密後的資料夾名稱（22碼）
+        加密後的資料夾名稱（25碼：YYYYMMDDHHMI_8英文4數字）
     """
     if not PATTERN_ORIGINAL.match(folder_name):
         raise ValueError(f"資料夾名稱格式不符: {folder_name}")
@@ -98,7 +98,7 @@ def encrypt_folder_name(folder_name: str, key: bytes) -> str:
     datetime_part = folder_name[8:]
     encrypted = encrypt_id(eight_digits, key)
 
-    return datetime_part + encrypted
+    return datetime_part + "_" + encrypted
 
 
 def decrypt_folder_name(folder_name: str, key: bytes) -> str:
@@ -106,7 +106,7 @@ def decrypt_folder_name(folder_name: str, key: bytes) -> str:
     將加密資料夾名稱還原為原始名稱
 
     Args:
-        folder_name: 加密資料夾名稱（22碼）
+        folder_name: 加密資料夾名稱（25碼：YYYYMMDDHHMI_8英文4數字）
         key: 由 derive_key() 衍生的金鑰
 
     Returns:
@@ -116,7 +116,7 @@ def decrypt_folder_name(folder_name: str, key: bytes) -> str:
         raise ValueError(f"資料夾名稱格式不符: {folder_name}")
 
     datetime_part = folder_name[:12]
-    encrypted_part = folder_name[12:]
+    encrypted_part = folder_name[13:]  # 跳過底線
     eight_digits = decrypt_id(encrypted_part, key)
 
     return eight_digits + datetime_part
@@ -128,10 +128,10 @@ def _rename_files_in_folder(folder_path: Path, old_prefix: str, new_prefix: str)
 
     例如:
         old_prefix = "12345678202602060821"
-        new_prefix = "202602060821AbCd123456"
+        new_prefix = "202602060821_AbCdEfGh5678"
 
-        12345678202602060821.edf   → 202602060821AbCd123456.edf
-        12345678202602060821_1.jpg → 202602060821AbCd123456_1.jpg
+        12345678202602060821.edf   → 202602060821_AbCdEfGh5678.edf
+        12345678202602060821_1.jpg → 202602060821_AbCdEfGh5678_1.jpg
     """
     for f in folder_path.iterdir():
         if not f.is_file():

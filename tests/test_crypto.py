@@ -7,8 +7,8 @@ from src.crypto import (
     derive_key,
     _feistel_encrypt,
     _feistel_decrypt,
-    _num_to_format,
-    _format_to_num,
+    _num_to_letters,
+    _letters_to_num,
 )
 
 
@@ -21,23 +21,23 @@ class TestFeistelRoundtrip:
     """Feistel 網絡加解密一致性測試"""
 
     def test_roundtrip_basic(self):
-        for n in [0, 1, 12345678, 99999999, 50000000]:
+        for n in [0, 1, 1234, 9999, 5000]:
             encrypted = _feistel_encrypt(n, KEY_A)
             decrypted = _feistel_decrypt(encrypted, KEY_A)
             assert decrypted == n
 
     def test_different_passwords_produce_different_results(self):
-        n = 12345678
+        n = 1234
         assert _feistel_encrypt(n, KEY_A) != _feistel_encrypt(n, KEY_B)
 
     def test_deterministic(self):
-        n = 12345678
+        n = 1234
         assert _feistel_encrypt(n, KEY_A) == _feistel_encrypt(n, KEY_A)
 
     def test_output_in_range(self):
-        for n in [0, 99999999, 55555555]:
+        for n in [0, 9999, 5555]:
             encrypted = _feistel_encrypt(n, KEY_A)
-            assert 0 <= encrypted <= 99999999
+            assert 0 <= encrypted <= 9999
 
     def test_no_collision(self):
         """測試不同輸入產生不同輸出（一對一映射）"""
@@ -48,23 +48,32 @@ class TestFeistelRoundtrip:
             outputs.add(encrypted)
 
 
-class TestFormatConversion:
-    """數字與 4英文+6數字 格式互轉測試"""
+class TestLettersConversion:
+    """數字與 8 英文字母格式互轉測試"""
 
     def test_roundtrip(self):
-        for m in [0, 1, 999999, 1000000, 50000000, 99999999]:
-            formatted = _num_to_format(m)
-            restored = _format_to_num(formatted)
+        for m in [0, 1, 999, 5000, 9999]:
+            formatted = _num_to_letters(m, KEY_A)
+            restored = _letters_to_num(formatted, KEY_A)
             assert restored == m
 
     def test_format_structure(self):
-        formatted = _num_to_format(1500000)
-        assert len(formatted) == 10
-        assert formatted[:4].isalpha()
-        assert formatted[4:].isdigit()
+        formatted = _num_to_letters(1500, KEY_A)
+        assert len(formatted) == 8
+        assert formatted.isalpha()
 
-    def test_zero(self):
-        assert _num_to_format(0) == "AAAA000000"
+    def test_no_leading_pattern(self):
+        """不同輸入的字母應有明顯差異，不會都是 AAAA 開頭"""
+        results = [_num_to_letters(m, KEY_A) for m in range(10)]
+        first_chars = set(r[0] for r in results)
+        # 10 個結果的首字母應至少有 2 種以上
+        assert len(first_chars) >= 2
+
+    def test_different_keys_produce_different_letters(self):
+        """不同金鑰應產生不同字母"""
+        a = _num_to_letters(42, KEY_A)
+        b = _num_to_letters(42, KEY_B)
+        assert a != b
 
 
 class TestEncryptDecryptId:
@@ -76,16 +85,22 @@ class TestEncryptDecryptId:
         decrypted = decrypt_id(encrypted, KEY_A)
         assert decrypted == original
 
+    def test_last_four_preserved(self):
+        """末 4 碼應保留原文"""
+        original = "12345678"
+        encrypted = encrypt_id(original, KEY_A)
+        assert encrypted[8:] == "5678"
+
     def test_wrong_password_fails(self):
         encrypted = encrypt_id("12345678", KEY_A)
-        decrypted = decrypt_id(encrypted, KEY_B)
-        assert decrypted != "12345678"
+        with pytest.raises(ValueError, match="解密失敗"):
+            decrypt_id(encrypted, KEY_B)
 
     def test_output_format(self):
         encrypted = encrypt_id("12345678", KEY_A)
-        assert len(encrypted) == 10
-        assert encrypted[:4].isalpha()
-        assert encrypted[4:].isdigit()
+        assert len(encrypted) == 12
+        assert encrypted[:8].isalpha()
+        assert encrypted[8:].isdigit()
 
     def test_various_inputs(self):
         for input_id in ["00000000", "12345678", "99999999", "00000001"]:
