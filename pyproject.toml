@@ -1,0 +1,15 @@
+[project]
+name = "idmasker"
+version = "0.1.0"
+description = "資料夾名稱去識別化工具 - 透過 AES 加密將可識別編號轉換為匿名代號"
+requires-python = ">=3.10"
+dependencies = [
+    "pycryptodome>=3.20.0",
+]
+
+[project.scripts]
+idmasker = "src.main:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
