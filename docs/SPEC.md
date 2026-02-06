@@ -178,8 +178,7 @@ YYYYMMDDHHMI<4英文><6數字>
 ```
 IDMasker/
 ├── docs/
-│   ├── SPEC.md              # 本文件 - 需求規格書
-│   └── OPEN_QUESTIONS.md    # 待確認事項
+│   └── SPEC.md              # 本文件 - 需求規格書
 ├── src/
 │   ├── __init__.py
 │   ├── main.py              # 程式進入點
