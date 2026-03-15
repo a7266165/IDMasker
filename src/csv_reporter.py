@@ -37,6 +37,7 @@ def generate_summary_csv(results: list[dict], password: str, csv_path: str) -> N
                 "JPG數量",
                 "有JSON",
                 "有EDF",
+                "有ACQ",
                 "加密時間",
             ])
 
@@ -56,6 +57,7 @@ def generate_summary_csv(results: list[dict], password: str, csv_path: str) -> N
                 file_info.get("jpg_count", 0),
                 "是" if file_info.get("has_json") else "否",
                 "是" if file_info.get("has_edf") else "否",
+                "是" if file_info.get("has_acq") else "否",
                 timestamp,
             ])
 

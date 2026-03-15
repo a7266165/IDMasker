@@ -59,25 +59,37 @@ def inspect_folder_files(folder_path: str) -> dict:
     檢查資料夾內的檔案類型
 
     Returns:
-        dict 包含 jpg_count, has_json, has_edf
+        dict 包含 jpg_count, has_json, has_edf, has_acq, other_count
     """
     folder = Path(folder_path)
     jpg_count = 0
     has_json = False
     has_edf = False
+    has_acq = False
+    other_count = 0
 
     for f in folder.rglob("*"):
         if not f.is_file():
             continue
         ext = f.suffix.lower()
-        if ext == ".jpg" or ext == ".jpeg":
+        if ext in (".jpg", ".jpeg"):
             jpg_count += 1
-        elif ext == ".json" or ext == ".jsonl":
+        elif ext in (".json", ".jsonl"):
             has_json = True
         elif ext == ".edf":
             has_edf = True
+        elif ext == ".acq":
+            has_acq = True
+        else:
+            other_count += 1
 
-    return {"jpg_count": jpg_count, "has_json": has_json, "has_edf": has_edf}
+    return {
+        "jpg_count": jpg_count,
+        "has_json": has_json,
+        "has_edf": has_edf,
+        "has_acq": has_acq,
+        "other_count": other_count,
+    }
 
 
 def encrypt_folder_name(folder_name: str, key: bytes) -> str:
@@ -122,27 +134,6 @@ def decrypt_folder_name(folder_name: str, key: bytes) -> str:
     return eight_digits + datetime_part
 
 
-def _rename_files_in_folder(folder_path: Path, old_prefix: str, new_prefix: str) -> None:
-    """
-    將資料夾內檔名以 old_prefix 開頭的檔案重新命名為 new_prefix。
-
-    例如:
-        old_prefix = "12345678202602060821"
-        new_prefix = "202602060821_AbCdEfGh5678"
-
-        12345678202602060821.edf   → 202602060821_AbCdEfGh5678.edf
-        12345678202602060821_1.jpg → 202602060821_AbCdEfGh5678_1.jpg
-    """
-    for f in folder_path.iterdir():
-        if not f.is_file():
-            continue
-        stem = f.stem  # 不含副檔名
-        if stem == old_prefix or stem.startswith(old_prefix + "_"):
-            new_stem = new_prefix + stem[len(old_prefix):]
-            new_file = f.with_name(new_stem + f.suffix)
-            f.rename(new_file)
-
-
 def copy_and_encrypt_folders(
     source_dir: str,
     output_dir: str,
@@ -150,10 +141,13 @@ def copy_and_encrypt_folders(
     password: str,
 ) -> list[dict]:
     """
-    批次複製並加密資料夾
+    批次複製並加密資料夾，依檔案類型分流到子資料夾
 
-    將來源資料夾複製到輸出目錄，並以加密後名稱命名。
-    原始資料夾保留不動。
+    輸出結構:
+        output/radar/   ← .jsonl 檔案
+        output/MP36/    ← .edf / .acq 檔案
+        output/pic/     ← .jpg/.jpeg 檔案（每個案一個加密名稱子資料夾，jpg 用流水號）
+        output/other/   ← 其他檔案（每個案一個加密名稱子資料夾）
 
     Args:
         source_dir: 來源父資料夾路徑
@@ -165,11 +159,18 @@ def copy_and_encrypt_folders(
         處理結果列表，每項包含:
         - old_name, new_name, success, error
         - case_id, datetime_str (解析後的欄位)
-        - file_info (jpg_count, has_json, has_edf)
+        - file_info (jpg_count, has_json, has_edf, has_acq, other_count)
     """
     source = Path(source_dir)
     output = Path(output_dir)
-    output.mkdir(parents=True, exist_ok=True)
+
+    # 確保四個子資料夾存在
+    radar_dir = output / "radar"
+    mp36_dir = output / "MP36"
+    pic_dir = output / "pic"
+    other_dir = output / "other"
+    for d in (radar_dir, mp36_dir, pic_dir, other_dir):
+        d.mkdir(parents=True, exist_ok=True)
 
     key = derive_key(password)
     results = []
@@ -188,9 +189,10 @@ def copy_and_encrypt_folders(
         try:
             new_name = encrypt_folder_name(name, key)
             src_path = source / name
-            dst_path = output / new_name
 
-            if dst_path.exists():
+            # 用 pic 子資料夾是否存在來判斷是否已處理
+            pic_case_dir = pic_dir / new_name
+            if pic_case_dir.exists():
                 result["skipped"] = True
                 result["new_name"] = new_name
                 result["error"] = f"已處理過，跳過: {new_name}"
@@ -198,11 +200,30 @@ def copy_and_encrypt_folders(
                 # 檢查來源資料夾內的檔案
                 result["file_info"] = inspect_folder_files(str(src_path))
 
-                # 複製整個資料夾
-                shutil.copytree(src_path, dst_path)
+                # 建立 pic 與 other 的個案子資料夾
+                pic_case_dir.mkdir(parents=True, exist_ok=True)
+                other_case_dir = other_dir / new_name
 
-                # 重新命名資料夾內的檔案
-                _rename_files_in_folder(dst_path, name, new_name)
+                # 遍歷所有檔案並分流
+                jpg_counter = 0
+                for f in src_path.rglob("*"):
+                    if not f.is_file():
+                        continue
+                    ext = f.suffix.lower()
+
+                    if ext in (".json", ".jsonl"):
+                        shutil.copy2(f, radar_dir / (new_name + ext))
+                    elif ext in (".edf", ".acq"):
+                        shutil.copy2(f, mp36_dir / (new_name + ext))
+                    elif ext in (".jpg", ".jpeg"):
+                        jpg_counter += 1
+                        shutil.copy2(f, pic_case_dir / f"{jpg_counter}.jpg")
+                    else:
+                        other_case_dir.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(f, other_case_dir / f.name)
+
+                # 若 other 資料夾為空（沒有其他檔案），不保留空資料夾
+                # （only created on demand above）
 
                 result["new_name"] = new_name
                 result["success"] = True
