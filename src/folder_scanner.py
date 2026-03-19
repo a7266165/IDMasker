@@ -144,9 +144,9 @@ def copy_and_encrypt_folders(
     批次複製並加密資料夾，依檔案類型分流到子資料夾
 
     輸出結構:
-        output/radar/   ← .jsonl 檔案
-        output/MP36/    ← .edf / .acq 檔案
-        output/pic/     ← .jpg/.jpeg 檔案（每個案一個加密名稱子資料夾，jpg 用流水號）
+        output/radar/   ← .jsonl 檔案（加密名稱.副檔名）
+        output/MP36/    ← .edf / .acq 檔案（加密名稱.副檔名）
+        output/pic/     ← .jpg/.jpeg 檔案（加密名稱子資料夾/加密名稱_流水號.jpg）
         output/other/   ← 其他檔案（每個案一個加密名稱子資料夾）
 
     Args:
@@ -200,7 +200,6 @@ def copy_and_encrypt_folders(
                 # 檢查來源資料夾內的檔案
                 result["file_info"] = inspect_folder_files(str(src_path))
 
-                # 建立 pic 與 other 的個案子資料夾
                 pic_case_dir.mkdir(parents=True, exist_ok=True)
                 other_case_dir = other_dir / new_name
 
@@ -217,13 +216,12 @@ def copy_and_encrypt_folders(
                         shutil.copy2(f, mp36_dir / (new_name + ext))
                     elif ext in (".jpg", ".jpeg"):
                         jpg_counter += 1
-                        shutil.copy2(f, pic_case_dir / f"{jpg_counter}.jpg")
+                        shutil.copy2(
+                            f, pic_case_dir / f"{new_name}_{jpg_counter}.jpg"
+                        )
                     else:
                         other_case_dir.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(f, other_case_dir / f.name)
-
-                # 若 other 資料夾為空（沒有其他檔案），不保留空資料夾
-                # （only created on demand above）
 
                 result["new_name"] = new_name
                 result["success"] = True
