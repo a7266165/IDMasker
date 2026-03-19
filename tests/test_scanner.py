@@ -127,12 +127,12 @@ class TestCopyAndEncryptFolders:
         folder = source / folder_name
         folder.mkdir()
 
-        # 建立各類檔案
+        # 建立各類檔案（jpg 檔名模擬實際格式：資料夾名_編號）
         (folder / "data.jsonl").write_text("test jsonl")
         (folder / "signal.edf").write_bytes(b"edf data")
-        (folder / "photo1.jpg").write_bytes(b"jpg1")
-        (folder / "photo2.jpg").write_bytes(b"jpg2")
-        (folder / "photo3.jpeg").write_bytes(b"jpg3")
+        (folder / f"{folder_name}_1.jpg").write_bytes(b"jpg1")
+        (folder / f"{folder_name}_3.jpg").write_bytes(b"jpg2")
+        (folder / f"{folder_name}_6.jpeg").write_bytes(b"jpg3")
         (folder / "notes.txt").write_text("some notes")
 
         return source, output, folder_name
@@ -155,12 +155,12 @@ class TestCopyAndEncryptFolders:
         # MP36 應有 edf
         assert (output / "MP36" / f"{new_name}.edf").exists()
 
-        # pic 應有加密名稱子資料夾，內含 加密名稱_原始檔名.jpg
+        # pic 應有加密名稱子資料夾，內含 加密名稱_原始編號.jpg（保留跳號）
         pic_dir = output / "pic" / new_name
         assert pic_dir.is_dir()
-        assert (pic_dir / f"{new_name}_photo1.jpg").exists()
-        assert (pic_dir / f"{new_name}_photo2.jpg").exists()
-        assert (pic_dir / f"{new_name}_photo3.jpg").exists()
+        assert (pic_dir / f"{new_name}_1.jpg").exists()
+        assert (pic_dir / f"{new_name}_3.jpg").exists()
+        assert (pic_dir / f"{new_name}_6.jpg").exists()
 
         # other 應有加密名稱子資料夾，內含 notes.txt
         other_dir = output / "other" / new_name

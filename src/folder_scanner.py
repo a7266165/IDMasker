@@ -214,10 +214,11 @@ def copy_and_encrypt_folders(
                     elif ext in (".edf", ".acq"):
                         shutil.copy2(f, mp36_dir / (new_name + ext))
                     elif ext in (".jpg", ".jpeg"):
-                        # 保留原始檔名中的編號（取 stem 的數字部分）
-                        original_stem = f.stem
+                        # 取底線後的編號（如 00510142_3.jpg → 3）
+                        parts = f.stem.rsplit("_", 1)
+                        seq = parts[-1] if len(parts) > 1 else f.stem
                         shutil.copy2(
-                            f, pic_case_dir / f"{new_name}_{original_stem}.jpg"
+                            f, pic_case_dir / f"{new_name}_{seq}.jpg"
                         )
                     else:
                         other_case_dir.mkdir(parents=True, exist_ok=True)
