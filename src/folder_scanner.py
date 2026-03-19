@@ -204,7 +204,6 @@ def copy_and_encrypt_folders(
                 other_case_dir = other_dir / new_name
 
                 # 遍歷所有檔案並分流
-                jpg_counter = 0
                 for f in src_path.rglob("*"):
                     if not f.is_file():
                         continue
@@ -215,9 +214,10 @@ def copy_and_encrypt_folders(
                     elif ext in (".edf", ".acq"):
                         shutil.copy2(f, mp36_dir / (new_name + ext))
                     elif ext in (".jpg", ".jpeg"):
-                        jpg_counter += 1
+                        # 保留原始檔名中的編號（取 stem 的數字部分）
+                        original_stem = f.stem
                         shutil.copy2(
-                            f, pic_case_dir / f"{new_name}_{jpg_counter}.jpg"
+                            f, pic_case_dir / f"{new_name}_{original_stem}.jpg"
                         )
                     else:
                         other_case_dir.mkdir(parents=True, exist_ok=True)
