@@ -190,9 +190,14 @@ def copy_and_encrypt_folders(
             new_name = encrypt_folder_name(name, key)
             src_path = source / name
 
-            # 用 pic 子資料夾是否存在來判斷是否已處理
+            # 檢查是否已處理（任一子資料夾下有此加密名稱）
             pic_case_dir = pic_dir / new_name
-            if pic_case_dir.exists():
+            already_processed = any(
+                (d / new_name).exists()
+                or list(d.glob(f"{new_name}.*"))
+                for d in (radar_dir, mp36_dir, pic_dir, other_dir)
+            )
+            if already_processed:
                 result["skipped"] = True
                 result["new_name"] = new_name
                 result["error"] = f"已處理過，跳過: {new_name}"
@@ -200,7 +205,6 @@ def copy_and_encrypt_folders(
                 # 檢查來源資料夾內的檔案
                 result["file_info"] = inspect_folder_files(str(src_path))
 
-                pic_case_dir.mkdir(parents=True, exist_ok=True)
                 other_case_dir = other_dir / new_name
 
                 # 遍歷所有檔案並分流
@@ -214,6 +218,7 @@ def copy_and_encrypt_folders(
                     elif ext in (".edf", ".acq"):
                         shutil.copy2(f, mp36_dir / (new_name + ext))
                     elif ext in (".jpg", ".jpeg"):
+                        pic_case_dir.mkdir(parents=True, exist_ok=True)
                         # 取底線後的編號（如 00510142_3.jpg → 3）
                         parts = f.stem.rsplit("_", 1)
                         seq = parts[-1] if len(parts) > 1 else f.stem

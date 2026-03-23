@@ -231,6 +231,25 @@ class TestCopyAndEncryptFolders:
         new_name = results[0]["new_name"]
         assert not (output / "other" / new_name).exists()
 
+    def test_no_jpg_files_no_pic_dir(self, tmp_path):
+        """若無 jpg 檔案，不應建立 pic 子資料夾"""
+        source = tmp_path / "source"
+        output = tmp_path / "output"
+        source.mkdir()
+        output.mkdir()
+
+        folder_name = "77778888202608081400"
+        folder = source / folder_name
+        folder.mkdir()
+        (folder / "data.jsonl").write_text("jsonl")
+        (folder / "signal.edf").write_bytes(b"edf")
+
+        results = copy_and_encrypt_folders(
+            str(source), str(output), [folder_name], "test_password"
+        )
+        new_name = results[0]["new_name"]
+        assert not (output / "pic" / new_name).exists()
+
 
 class TestRenameFolders:
     """批次重命名測試"""
