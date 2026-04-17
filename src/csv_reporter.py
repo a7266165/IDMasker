@@ -12,12 +12,17 @@ from pathlib import Path
 BACKUP_DIR = Path.home() / "Documents" / "IDMasker" / "Backups"
 
 
+def _excel_text(value: str) -> str:
+    """包成 Excel 公式字串（`="..."`），避免開啟時被轉為數字/科學記號而掉前導 0"""
+    return f'="{value}"'
+
+
 def generate_summary_csv(results: list[dict], password: str, csv_path: str) -> None:
     """
     產生 summary.csv（加密總報告）
 
     若檔案已存在則追加新資料列，不覆寫舊紀錄。
-    欄位: 原始病例編號、日期、時分、加密前檔名、加密後檔名、
+    欄位: 原始病例編號、日期、時分秒、加密前檔名、加密後檔名、
           使用密碼、JPG數量、有JSON、有EDF、加密時間
     """
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -30,7 +35,7 @@ def generate_summary_csv(results: list[dict], password: str, csv_path: str) -> N
             writer.writerow([
                 "原始病例編號",
                 "日期",
-                "時分",
+                "時分秒",
                 "加密前檔名",
                 "加密後檔名",
                 "使用密碼",
@@ -46,12 +51,12 @@ def generate_summary_csv(results: list[dict], password: str, csv_path: str) -> N
                 continue
 
             file_info = r.get("file_info") or {}
-            datetime_str = r["datetime_str"]  # YYYYMMDDHHMI
+            datetime_str = r["datetime_str"]  # YYYYMMDDHHMISS
             writer.writerow([
-                r["case_id"],
-                datetime_str[:8],
-                datetime_str[8:],
-                r["old_name"],
+                _excel_text(r["case_id"]),
+                _excel_text(datetime_str[:8]),
+                _excel_text(datetime_str[8:]),
+                _excel_text(r["old_name"]),
                 r["new_name"],
                 password,
                 file_info.get("jpg_count", 0),
@@ -92,15 +97,15 @@ def generate_processed_csv(results: list[dict], source_dir: str) -> str:
             if not r["success"]:
                 continue
 
-            datetime_str = r["datetime_str"]  # YYYYMMDDHHMI
+            datetime_str = r["datetime_str"]  # YYYYMMDDHHMISS
             date_part = datetime_str[:8]       # YYYYMMDD
-            time_part = datetime_str[8:]       # HHMI
+            time_part = datetime_str[8:]       # HHMMSS
 
             writer.writerow([
-                r["case_id"],
-                date_part,
-                time_part,
-                r["old_name"],
+                _excel_text(r["case_id"]),
+                _excel_text(date_part),
+                _excel_text(time_part),
+                _excel_text(r["old_name"]),
                 timestamp,
             ])
 

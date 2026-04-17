@@ -20,24 +20,24 @@ class TestFolderNameTransform:
     """資料夾名稱轉換測試"""
 
     def test_encrypt_folder_name(self):
-        result = encrypt_folder_name("12345678202602060821", KEY)
-        assert len(result) == 25
-        assert result[:12] == "202602060821"
-        assert result[12] == "_"
-        assert result[13:21].isalpha()
-        assert result[21:] == "5678"  # 末 4 碼保留
+        result = encrypt_folder_name("1234567820260206082130", KEY)
+        assert len(result) == 27
+        assert result[:14] == "20260206082130"
+        assert result[14] == "_"
+        assert result[15:23].isalpha()
+        assert result[23:] == "5678"  # 末 4 碼保留
 
     def test_decrypt_folder_name_roundtrip(self):
-        original = "12345678202602060821"
+        original = "1234567820260206082130"
         encrypted = encrypt_folder_name(original, KEY)
         decrypted = decrypt_folder_name(encrypted, KEY)
         assert decrypted == original
 
     def test_various_folders(self):
         originals = [
-            "12345678202602060821",
-            "00000001202601150930",
-            "99999999202512311259",
+            "1234567820260206082130",
+            "0000000120260115093000",
+            "9999999920251231125900",
         ]
         for original in originals:
             encrypted = encrypt_folder_name(original, KEY)
@@ -46,7 +46,7 @@ class TestFolderNameTransform:
 
     def test_last_four_preserved_in_folder_name(self):
         """資料夾加密後末 4 碼應與原始 ID 末 4 碼一致"""
-        original = "12345678202602060821"
+        original = "1234567820260206082130"
         encrypted = encrypt_folder_name(original, KEY)
         assert encrypted[-4:] == "5678"
 
@@ -56,23 +56,23 @@ class TestScanFolders:
 
     @pytest.fixture
     def temp_dir(self, tmp_path):
-        (tmp_path / "12345678202602060821").mkdir()
-        (tmp_path / "00000001202601150930").mkdir()
+        (tmp_path / "1234567820260206082130").mkdir()
+        (tmp_path / "0000000120260115093000").mkdir()
         (tmp_path / "not_a_folder").mkdir()
         (tmp_path / "12345").mkdir()
-        (tmp_path / "abcdefghijklmnopqrst").mkdir()  # 20碼但非數字
+        (tmp_path / "abcdefghijklmnopqrstuv").mkdir()  # 22碼但非數字
         (tmp_path / "somefile.txt").touch()
         return tmp_path
 
     def test_scan_for_encryption(self, temp_dir):
         results = scan_for_encryption(str(temp_dir))
         assert len(results) == 2
-        assert "12345678202602060821" in results
-        assert "00000001202601150930" in results
+        assert "1234567820260206082130" in results
+        assert "0000000120260115093000" in results
 
     def test_scan_for_decryption(self, temp_dir):
-        (temp_dir / "202602060821_AbCdEfGh1234").mkdir()
-        (temp_dir / "202601150930_XyZwAbCd0001").mkdir()
+        (temp_dir / "20260206082130_AbCdEfGh1234").mkdir()
+        (temp_dir / "20260115093000_XyZwAbCd0001").mkdir()
         results = scan_for_decryption(str(temp_dir))
         assert len(results) == 2
 
@@ -85,7 +85,7 @@ class TestInspectFolderFiles:
     """檔案類型偵測測試"""
 
     def test_inspect_all_types(self, tmp_path):
-        folder = tmp_path / "12345678202602060821"
+        folder = tmp_path / "1234567820260206082130"
         folder.mkdir()
         (folder / "data.jsonl").touch()
         (folder / "signal.edf").touch()
@@ -123,7 +123,7 @@ class TestCopyAndEncryptFolders:
         source.mkdir()
         output.mkdir()
 
-        folder_name = "12345678202602060821"
+        folder_name = "1234567820260206082130"
         folder = source / folder_name
         folder.mkdir()
 
@@ -188,7 +188,7 @@ class TestCopyAndEncryptFolders:
         source.mkdir()
         output.mkdir()
 
-        folder_name = "11112222202603011000"
+        folder_name = "1111222220260301100000"
         folder = source / folder_name
         folder.mkdir()
         (folder / "bio.acq").write_bytes(b"acq data")
@@ -219,7 +219,7 @@ class TestCopyAndEncryptFolders:
         source.mkdir()
         output.mkdir()
 
-        folder_name = "55556666202607071200"
+        folder_name = "5555666620260707120000"
         folder = source / folder_name
         folder.mkdir()
         (folder / "data.jsonl").write_text("jsonl")
@@ -238,7 +238,7 @@ class TestCopyAndEncryptFolders:
         source.mkdir()
         output.mkdir()
 
-        folder_name = "77778888202608081400"
+        folder_name = "7777888820260808140000"
         folder = source / folder_name
         folder.mkdir()
         (folder / "data.jsonl").write_text("jsonl")
@@ -255,7 +255,7 @@ class TestRenameFolders:
     """批次重命名測試"""
 
     def test_encrypt_rename(self, tmp_path):
-        folder_name = "12345678202602060821"
+        folder_name = "1234567820260206082130"
         (tmp_path / folder_name).mkdir()
 
         results = rename_folders(
@@ -268,7 +268,7 @@ class TestRenameFolders:
         assert (tmp_path / results[0]["new_name"]).exists()
 
     def test_decrypt_rename(self, tmp_path):
-        original = "12345678202602060821"
+        original = "1234567820260206082130"
         password = "roundtrip"
         (tmp_path / original).mkdir()
         enc_results = rename_folders(str(tmp_path), [original], password, "encrypt")
@@ -283,7 +283,7 @@ class TestRenameFolders:
         assert (tmp_path / original).exists()
 
     def test_target_already_exists(self, tmp_path):
-        folder_name = "12345678202602060821"
+        folder_name = "1234567820260206082130"
         (tmp_path / folder_name).mkdir()
 
         target_name = encrypt_folder_name(folder_name, derive_key("password"))

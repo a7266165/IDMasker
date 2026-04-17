@@ -4,7 +4,23 @@
       "Bash(git init:*)",
       "Bash(gh auth status:*)",
       "Bash(where:*)",
-      "Bash(winget:*)"
+      "Bash(winget:*)",
+      "Bash(find /c/Users/4080/Desktop/IDMasker -type f \\\\\\( -name \"*.py\" -o -name \"*.md\" \\\\\\) ! -path \"*/.git/*\" ! -path \"*/__pycache__/*\" ! -path \"*/.pytest_cache/*\" -exec grep -l \"%Y%m%d%H%M\\\\|strftime\\\\|datetime\" {} \\\\;)",
+      "Bash(/c/Users/4080/anaconda3/envs/tmp_idmasker_test/python.exe -m pip install pycryptodome pytest)",
+      "Bash(/c/Users/4080/anaconda3/envs/tmp_idmasker_test/python.exe -m pytest tests/ -v)",
+      "Bash(/c/Users/4080/anaconda3/envs/tmp_idmasker_build/python.exe -m pip install -r \"c:/Users/4080/Desktop/IDMasker/requirements.txt\")",
+      "Bash(rm -rf build dist)",
+      "Bash(/c/Users/4080/anaconda3/envs/tmp_idmasker_build/python.exe -m PyInstaller IDMasker.spec --clean --noconfirm)",
+      "Bash(/c/Users/4080/anaconda3/envs/idmasker/python.exe -c \"import Crypto; import PyInstaller; print\\(Crypto.__version__, PyInstaller.__version__\\)\")",
+      "Bash(/c/Users/4080/anaconda3/envs/idmasker/python.exe -m PyInstaller IDMasker.spec --clean --noconfirm)",
+      "Bash(/c/Users/4080/anaconda3/python.exe /c/tmp/analyze_transcripts.py)",
+      "Read(//c/Users/4080/anaconda3/envs/idmasker/Library/lib/tcl8.6/**)",
+      "Bash(/c/Users/4080/anaconda3/envs/idmasker/python.exe -c ' *)",
+      "Read(//c/Users/4080/anaconda3/envs/idmasker/DLLs/**)",
+      "Read(//c/Users/4080/anaconda3/envs/idmasker/Library/bin/**)",
+      "Bash(/c/Users/4080/anaconda3/python.exe /c/tmp/scan_python_conda.py)",
+      "Bash(/c/Users/4080/anaconda3/envs/idmasker/python.exe -m pytest tests/)",
+      "Bash(/c/Users/4080/anaconda3/python.exe -c \"import json; json.load\\(open\\(r'C:\\\\Users\\\\4080\\\\.claude\\\\settings.json', encoding='utf-8'\\)\\); print\\('OK: valid JSON'\\)\")"
     ]
   }
 }

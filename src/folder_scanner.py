@@ -11,16 +11,16 @@ from pathlib import Path
 
 from src.crypto import derive_key, encrypt_id, decrypt_id
 
-# 原始格式：20 碼純數字（前8碼ID + 後12碼日期時間）
-PATTERN_ORIGINAL = re.compile(r"^\d{20}$")
+# 原始格式：22 碼純數字（前8碼ID + 後14碼日期時間）
+PATTERN_ORIGINAL = re.compile(r"^\d{22}$")
 
-# 加密格式：12碼數字 + _ + 8英文 + 4數字 = 25碼
-PATTERN_ENCRYPTED = re.compile(r"^\d{12}_[A-Za-z]{8}\d{4}$")
+# 加密格式：14碼數字 + _ + 8英文 + 4數字 = 27碼
+PATTERN_ENCRYPTED = re.compile(r"^\d{14}_[A-Za-z]{8}\d{4}$")
 
 
 def scan_for_encryption(parent_dir: str) -> list[str]:
     """
-    掃描父資料夾中符合原始格式（20碼純數字）的子資料夾
+    掃描父資料夾中符合原始格式（22碼純數字）的子資料夾
 
     Returns:
         符合格式的資料夾名稱列表
@@ -38,7 +38,7 @@ def scan_for_encryption(parent_dir: str) -> list[str]:
 
 def scan_for_decryption(parent_dir: str) -> list[str]:
     """
-    掃描父資料夾中符合加密格式（12碼+4英文+6數字）的子資料夾
+    掃描父資料夾中符合加密格式（14碼+8英文+4數字）的子資料夾
 
     Returns:
         符合格式的資料夾名稱列表
@@ -97,11 +97,11 @@ def encrypt_folder_name(folder_name: str, key: bytes) -> str:
     將原始資料夾名稱轉換為加密名稱
 
     Args:
-        folder_name: 原始資料夾名稱（20碼純數字）
+        folder_name: 原始資料夾名稱（22碼純數字）
         key: 由 derive_key() 衍生的金鑰
 
     Returns:
-        加密後的資料夾名稱（25碼：YYYYMMDDHHMI_8英文4數字）
+        加密後的資料夾名稱（27碼：YYYYMMDDHHMISS_8英文4數字）
     """
     if not PATTERN_ORIGINAL.match(folder_name):
         raise ValueError(f"資料夾名稱格式不符: {folder_name}")
@@ -118,17 +118,17 @@ def decrypt_folder_name(folder_name: str, key: bytes) -> str:
     將加密資料夾名稱還原為原始名稱
 
     Args:
-        folder_name: 加密資料夾名稱（25碼：YYYYMMDDHHMI_8英文4數字）
+        folder_name: 加密資料夾名稱（27碼：YYYYMMDDHHMISS_8英文4數字）
         key: 由 derive_key() 衍生的金鑰
 
     Returns:
-        原始資料夾名稱（20碼純數字）
+        原始資料夾名稱（22碼純數字）
     """
     if not PATTERN_ENCRYPTED.match(folder_name):
         raise ValueError(f"資料夾名稱格式不符: {folder_name}")
 
-    datetime_part = folder_name[:12]
-    encrypted_part = folder_name[13:]  # 跳過底線
+    datetime_part = folder_name[:14]
+    encrypted_part = folder_name[15:]  # 跳過底線
     eight_digits = decrypt_id(encrypted_part, key)
 
     return eight_digits + datetime_part
