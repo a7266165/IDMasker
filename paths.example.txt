@@ -1,0 +1,5 @@
+# IDMasker 路徑設定（KEY=VALUE）。複製成 paths.txt（已 gitignore）後填本機值。
+# 缺檔或缺鍵時退回預設 %USERPROFILE%\Documents\IDMasker\Backups。
+# BACKUP_DIR：summary_*.csv / processed_*.csv 的備份夾。內容是「原始病歷號 <-> 加密名」對照且含明文密碼欄，
+#             屬再識別鑰匙：不入 git、不進雲端同步。
+BACKUP_DIR=D:\<資料線>\common\identity\idmasker_backups

@@ -6,10 +6,38 @@ IDMasker CSV 報告產生模組
 
 import csv
 import shutil
+import sys
 from datetime import datetime
 from pathlib import Path
 
-BACKUP_DIR = Path.home() / "Documents" / "IDMasker" / "Backups"
+_DEFAULT_BACKUP_DIR = Path.home() / "Documents" / "IDMasker" / "Backups"
+
+
+def _repo_root() -> Path:
+    """repo 根（原始碼執行）或 exe 所在夾（PyInstaller 打包後）"""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[1]
+
+
+def _load_paths() -> dict:
+    """讀 repo 根的 paths.txt（KEY=VALUE；已 gitignore，範本見 paths.example.txt）；缺檔回空 dict"""
+    cfg: dict = {}
+    p = _repo_root() / "paths.txt"
+    if not p.exists():
+        return cfg
+    for line in p.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        cfg[k.strip()] = v.strip()
+    return cfg
+
+
+_PATHS = _load_paths()
+# 備份夾：paths.txt 的 BACKUP_DIR；缺鍵退回 %USERPROFILE%\Documents\IDMasker\Backups
+BACKUP_DIR = Path(_PATHS["BACKUP_DIR"]) if _PATHS.get("BACKUP_DIR") else _DEFAULT_BACKUP_DIR
 
 
 def _excel_text(value: str) -> str:
@@ -116,7 +144,7 @@ def backup_csvs(summary_path: str, processed_path: str) -> None:
     """
     將 summary.csv 和 processed.csv 備份到固定備份目錄
 
-    備份路徑: C:\\Users\\Administrator\\Documents\\IDMasker\\Backups
+    備份路徑: paths.txt 的 BACKUP_DIR（缺鍵退回 %USERPROFILE%\\Documents\\IDMasker\\Backups）
     """
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
