@@ -5,10 +5,17 @@ from src.crypto import (
     encrypt_id,
     decrypt_id,
     derive_key,
+    encrypt_national_id,
+    decrypt_national_id,
+    NID_DOMAIN,
     _feistel_encrypt,
     _feistel_decrypt,
     _num_to_letters,
     _letters_to_num,
+    _nid_head_to_int,
+    _int_to_nid_head,
+    _int_to_letters,
+    _letters_to_int,
 )
 
 
@@ -123,3 +130,72 @@ class TestEncryptDecryptId:
             encrypted = encrypt_id(str(i).zfill(8), KEY_A)
             assert encrypted not in results
             results.add(encrypted)
+
+
+class TestNationalId:
+    """身份證號：前 6 碼加密成 6 英文、末 4 碼原文，長度不變"""
+
+    def test_head_int_roundtrip(self):
+        for head in ["A12345", "Z99999", "a00000", "AB1234", "A91234", "B00001"]:
+            n = _nid_head_to_int(head)
+            assert 0 <= n < NID_DOMAIN
+            assert _int_to_nid_head(n) == head
+
+    def test_letters_int_roundtrip(self):
+        for m in [0, 1, 51, 52, 123456789, 52**10 - 1]:
+            letters = _int_to_letters(m, 10)
+            assert len(letters) == 10
+            assert _letters_to_int(letters) == m
+
+    def test_format(self):
+        enc = encrypt_national_id("A123456789", KEY_A)
+        assert len(enc) == 14
+        assert enc[:10].isalpha() and enc[:10].isascii()
+        assert enc[10:] == "6789"  # 末 4 碼原文
+
+    def test_roundtrip_various(self):
+        for nid in [
+            "A123456789", "Z987654321", "a123456789",
+            "AB12345678", "A812345678", "F000000000",
+        ]:
+            enc = encrypt_national_id(nid, KEY_A)
+            assert decrypt_national_id(enc, KEY_A) == nid
+
+    def test_deterministic_and_key_dependent(self):
+        a1 = encrypt_national_id("A123456789", KEY_A)
+        a2 = encrypt_national_id("A123456789", KEY_A)
+        b = encrypt_national_id("A123456789", KEY_B)
+        assert a1 == a2
+        assert a1 != b
+
+    def test_head_not_leaked(self):
+        enc = encrypt_national_id("A123456789", KEY_A)
+        assert "A12345" not in enc
+
+    def test_no_collision_sample(self):
+        seen = set()
+        for i in range(0, 10000, 37):
+            enc = encrypt_national_id(f"A1{i:08d}", KEY_A)
+            assert enc not in seen
+            seen.add(enc)
+
+    def test_wrong_key_detected(self):
+        """錯密碼時逆運算落在合法範圍外的機率約 1 - 2e-10，抽樣 200 筆應全部報錯"""
+        errors = 0
+        for i in range(200):
+            enc = encrypt_national_id(f"B2{i:08d}", KEY_A)
+            try:
+                decrypt_national_id(enc, KEY_B)
+            except ValueError:
+                errors += 1
+        assert errors == 200
+
+    def test_invalid_input(self):
+        for bad in ["123456789", "A12345678", "A1234567890", "1234567890", "A12345678X"]:
+            with pytest.raises(ValueError):
+                encrypt_national_id(bad, KEY_A)
+
+    def test_invalid_encoded(self):
+        for bad in ["qWeRtYuIoP678", "qWeRtYuIo16789", "qWeRtYuIoP67a9", "qWeRtYuIoP67890"]:
+            with pytest.raises(ValueError):
+                decrypt_national_id(bad, KEY_A)

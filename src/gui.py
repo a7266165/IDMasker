@@ -10,8 +10,9 @@ from tkinter import ttk, filedialog, messagebox
 import threading
 from pathlib import Path
 
-from src.folder_scanner import scan_for_encryption, copy_and_encrypt_folders
-from src.csv_reporter import generate_summary_csv, generate_processed_csv, backup_csvs, BACKUP_DIR
+from src.folder_scanner import GROUP_PATIENT, GROUP_CONTROL, classify_folder, scan_for_encryption
+from src.csv_reporter import BACKUP_DIR
+from src.pipeline import run_encryption
 
 
 class IDMaskerApp:
@@ -224,12 +225,20 @@ class IDMaskerApp:
             self.status_var.set("掃描完成，無符合格式的資料夾")
             return
 
+        counts = {GROUP_PATIENT: 0, GROUP_CONTROL: 0}
         for name in folders:
+            group = classify_folder(name)
+            counts[group] += 1
             var = tk.BooleanVar(value=True)
             self.check_vars.append(var)
-            ttk.Checkbutton(self.checklist_frame, text=name, variable=var).pack(anchor="w")
+            ttk.Checkbutton(
+                self.checklist_frame, text=f"[{group}] {name}", variable=var
+            ).pack(anchor="w")
 
-        self.status_var.set(f"掃描完成，找到 {len(folders)} 個資料夾")
+        self.status_var.set(
+            f"掃描完成，找到 {len(folders)} 個資料夾"
+            f"（patient {counts[GROUP_PATIENT]}、control {counts[GROUP_CONTROL]}）"
+        )
 
     def _select_all(self):
         for var in self.check_vars:
@@ -283,7 +292,7 @@ class IDMaskerApp:
         ]
         source = self.source_var.get().strip()
         output = self.output_var.get().strip()
-        csv_path = str(Path(self.csv_var.get().strip()) / "summary.csv")
+        csv_dir = self.csv_var.get().strip()
         password = self.pw_var.get()
 
         self.run_btn.configure(state="disabled")
@@ -291,26 +300,18 @@ class IDMaskerApp:
 
         def worker():
             try:
-                results = copy_and_encrypt_folders(source, output, selected, password)
-
-                success_count = sum(1 for r in results if r["success"])
-                skipped_count = sum(1 for r in results if r.get("skipped"))
-                fail_count = len(results) - success_count - skipped_count
-
-                # 只在有新成功結果時才產生/覆寫 CSV
-                if success_count > 0:
-                    generate_summary_csv(results, password, csv_path)
-
-                    processed_path = generate_processed_csv(results, source)
-
-                    # 備份兩份 CSV（失敗不中斷）
-                    try:
-                        backup_csvs(csv_path, processed_path)
-                    except Exception:
-                        pass  # 備份失敗不影響主流程
+                # 加密複製、CSV、備份（只保留最新一版；備份失敗不中斷）
+                summary = run_encryption(
+                    source, output, csv_dir, password, folder_names=selected
+                )
 
                 # 回到主執行緒更新 UI
-                self.root.after(0, lambda: self._on_complete(success_count, fail_count, results))
+                self.root.after(
+                    0,
+                    lambda: self._on_complete(
+                        summary["success_count"], summary["fail_count"], summary["results"]
+                    ),
+                )
             except Exception:
                 import traceback
                 err_msg = traceback.format_exc()
@@ -329,9 +330,17 @@ class IDMaskerApp:
             parts.append(f"跳過: {len(skipped)}")
         if errors:
             parts.append(f"失敗: {len(errors)}")
-        self.status_var.set("完成 — " + ", ".join(parts))
+        self.status_var.set("完成 - " + ", ".join(parts))
 
-        msg = f"成功加密: {success} 個資料夾\n"
+        group_counts: dict[str, int] = {}
+        for r in results:
+            if r["success"]:
+                group_counts[r["group"]] = group_counts.get(r["group"], 0) + 1
+
+        msg = f"成功加密: {success} 個資料夾"
+        if group_counts:
+            msg += "（" + "、".join(f"{g} {n}" for g, n in sorted(group_counts.items())) + "）"
+        msg += "\n"
 
         if skipped:
             skipped_names = "\n".join(f"  {r['old_name']}" for r in skipped)
@@ -344,7 +353,7 @@ class IDMaskerApp:
         if success > 0:
             msg += (
                 f"\nsummary.csv 及 processed.csv 已儲存\n"
-                f"備份已複製到:\n{BACKUP_DIR}"
+                f"最新備份已複製到（舊版備份已清除）:\n{BACKUP_DIR}"
             )
 
         if errors:

@@ -23,3 +23,6 @@ Desktop.ini
 
 # 本機路徑設定（範本 paths.example.txt 入 git）
 paths.txt
+
+# 實例測試工作區（scripts/instance_test.py 產生，含假資料與輸出）
+workspace/
