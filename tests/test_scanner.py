@@ -1,10 +1,11 @@
-"""資料夾掃描、格式辨識、加密複製與重命名邏輯測試"""
+"""資料夾掃描、加密複製與重命名邏輯測試"""
 
 import pytest
 from src.crypto import derive_key
 from src.folder_scanner import (
-    classify_folder,
-    parse_folder_name,
+    LayoutError,
+    split_case_name,
+    find_legacy_case_dirs,
     scan_for_encryption,
     scan_for_decryption,
     encrypt_folder_name,
@@ -17,142 +18,104 @@ from src.folder_scanner import (
 
 KEY = derive_key("test_password")
 
-PATIENT = "1234567820260206082130"
-NATIONAL_ID = "A123456789"
-CONTROL = NATIONAL_ID + PATIENT
+CASE_A = "1234567820260206082130"
+CASE_B = "0000000120260115093000"
+CASE_C = "2000000120260405093015"
 
 
-class TestClassifyAndParse:
-    """群組辨識與名稱拆解測試"""
+class TestSplitCaseName:
+    def test_split(self):
+        assert split_case_name(CASE_A) == ("12345678", "20260206082130")
 
-    def test_patient(self):
-        assert classify_folder(PATIENT) == "patient"
-        assert parse_folder_name(PATIENT) == {
-            "group": "patient",
-            "national_id": "",
-            "case_id": "12345678",
-            "datetime_str": "20260206082130",
-            "core": PATIENT,
-        }
-
-    def test_control(self):
-        assert classify_folder(CONTROL) == "control"
-        parsed = parse_folder_name(CONTROL)
-        assert parsed["group"] == "control"
-        assert parsed["national_id"] == NATIONAL_ID
-        assert parsed["case_id"] == "12345678"
-        assert parsed["datetime_str"] == "20260206082130"
-        assert parsed["core"] == PATIENT
-
-    def test_control_accepts_lowercase_and_two_letter_prefix(self):
-        assert classify_folder("a123456789" + PATIENT) == "control"
-        assert classify_folder("AB12345678" + PATIENT) == "control"
-
-    @pytest.mark.parametrize(
-        "name",
-        [
-            "12345",  # 太短
-            "abcdefghijklmnopqrstuv",  # 22 碼但非數字
-            "1234567890" + PATIENT,  # 前 10 碼全數字，不是身份證號
-            "A12345678" + PATIENT,  # 身份證號只有 9 碼
-            "A1234567890" + PATIENT,  # 身份證號 11 碼
-            "20260206082130_AbCdEfGh1234",  # 加密格式
-        ],
-    )
+    @pytest.mark.parametrize("name", ["12345", "abcdefghijklmnopqrstuv", "A123456789" + CASE_A])
     def test_invalid(self, name):
-        assert classify_folder(name) is None
         with pytest.raises(ValueError):
-            parse_folder_name(name)
+            split_case_name(name)
 
 
 class TestFolderNameTransform:
     """資料夾名稱轉換測試"""
 
-    def test_encrypt_patient(self):
-        result = encrypt_folder_name(PATIENT, KEY)
+    def test_encrypt_folder_name(self):
+        result = encrypt_folder_name(CASE_A, KEY)
         assert len(result) == 27
         assert result[:14] == "20260206082130"
         assert result[14] == "_"
         assert result[15:23].isalpha()
         assert result[23:] == "5678"  # 末 4 碼保留
 
-    def test_encrypt_control(self):
-        """control = 日期時間 + _ + 加密身份證號（10 英文 + 末 4 碼原文）；病歷號不進名稱"""
-        encrypted = encrypt_folder_name(CONTROL, KEY)
-        assert len(encrypted) == 29
-        assert encrypted[:14] == "20260206082130"
-        assert encrypted[14] == "_"
-        assert encrypted[15:25].isalpha()
-        assert encrypted[25:] == "6789"  # 身份證號末 4 碼原文
-        assert NATIONAL_ID not in encrypted
-        assert NATIONAL_ID[:6] not in encrypted
-        assert "12345678" not in encrypted  # 病歷號不進名稱
-        assert encrypted != encrypt_folder_name(PATIENT, KEY)
-
-    def test_decrypt_roundtrip_patient(self):
-        encrypted = encrypt_folder_name(PATIENT, KEY)
-        assert decrypt_folder_name(encrypted, KEY) == PATIENT
-
-    def test_decrypt_control_returns_national_id_and_datetime(self):
-        """control 還原為身份證號 + 日期時間（24 碼）；病歷號需查 summary.csv"""
-        encrypted = encrypt_folder_name(CONTROL, KEY)
-        assert decrypt_folder_name(encrypted, KEY) == NATIONAL_ID + "20260206082130"
+    def test_decrypt_folder_name_roundtrip(self):
+        encrypted = encrypt_folder_name(CASE_A, KEY)
+        assert decrypt_folder_name(encrypted, KEY) == CASE_A
 
     def test_various_folders(self):
-        originals = [
-            "1234567820260206082130",
-            "0000000120260115093000",
-            "9999999920251231125900",
-        ]
-        for original in originals:
+        for original in [CASE_A, CASE_B, "9999999920251231125900", CASE_C]:
             encrypted = encrypt_folder_name(original, KEY)
             assert decrypt_folder_name(encrypted, KEY) == original
 
     def test_invalid_name_raises(self):
         with pytest.raises(ValueError):
             encrypt_folder_name("not_a_folder", KEY)
+        with pytest.raises(ValueError):
+            decrypt_folder_name("20260206082130_AbCdEfGh123", KEY)
 
 
 class TestScanFolders:
-    """資料夾掃描測試"""
+    """來源夾掃描：patient/ 與 control/ 分層"""
 
     @pytest.fixture
-    def temp_dir(self, tmp_path):
-        (tmp_path / PATIENT).mkdir()
-        (tmp_path / "0000000120260115093000").mkdir()
-        (tmp_path / CONTROL).mkdir()
-        (tmp_path / "not_a_folder").mkdir()
-        (tmp_path / "12345").mkdir()
-        (tmp_path / "abcdefghijklmnopqrstuv").mkdir()  # 22碼但非數字
+    def source(self, tmp_path):
+        (tmp_path / "patient" / CASE_A).mkdir(parents=True)
+        (tmp_path / "patient" / CASE_B).mkdir()
+        (tmp_path / "patient" / "not_a_case").mkdir()
+        (tmp_path / "control" / CASE_C).mkdir(parents=True)
+        (tmp_path / "control" / "abcdefghijklmnopqrstuv").mkdir()  # 22碼但非數字
         (tmp_path / "somefile.txt").touch()
+        (tmp_path / "processed.csv").touch()
+        (tmp_path / "other_dir").mkdir()  # 頂層非 22 碼資料夾：忽略
         return tmp_path
 
-    def test_scan_for_encryption_finds_both_groups(self, temp_dir):
-        results = scan_for_encryption(str(temp_dir))
-        assert len(results) == 3
-        assert PATIENT in results
-        assert "0000000120260115093000" in results
-        assert CONTROL in results
+    def test_scan_groups_by_location(self, source):
+        cases = scan_for_encryption(str(source))
+        assert cases == [
+            ("patient", CASE_B),
+            ("patient", CASE_A),
+            ("control", CASE_C),
+        ]
 
-    def test_scan_for_decryption(self, temp_dir):
-        (temp_dir / "20260206082130_AbCdEfGh1234").mkdir()
-        (temp_dir / "20260115093000_XyZwAbCd0001").mkdir()
-        (temp_dir / "20260206082130_qWeRtYuIoP6789").mkdir()  # control（29 碼）
-        (temp_dir / "20260206082130_qWeRtYuIo6789").mkdir()  # 9 英文，兩種格式都不是，不收
-        results = scan_for_decryption(str(temp_dir))
-        assert len(results) == 3
-        assert "20260206082130_qWeRtYuIoP6789" in results
+    def test_scan_only_patient_dir(self, tmp_path):
+        (tmp_path / "patient" / CASE_A).mkdir(parents=True)
+        assert scan_for_encryption(str(tmp_path)) == [("patient", CASE_A)]
+
+    def test_scan_empty_source(self, tmp_path):
+        assert scan_for_encryption(str(tmp_path)) == []
+
+    def test_legacy_top_level_case_raises(self, tmp_path):
+        """頂層直接放 22 碼資料夾（舊版擺法）：直接報錯，不往下跑"""
+        (tmp_path / "patient" / CASE_A).mkdir(parents=True)
+        (tmp_path / CASE_B).mkdir()
+        assert find_legacy_case_dirs(str(tmp_path)) == [CASE_B]
+        with pytest.raises(LayoutError, match="頂層直接放了 1 個"):
+            scan_for_encryption(str(tmp_path))
 
     def test_scan_nonexistent_dir(self):
         with pytest.raises(FileNotFoundError):
             scan_for_encryption("/nonexistent/path")
+
+    def test_scan_for_decryption(self, tmp_path):
+        (tmp_path / "20260206082130_AbCdEfGh1234").mkdir()
+        (tmp_path / "20260115093000_XyZwAbCd0001").mkdir()
+        (tmp_path / "20260206082130_AbCdEfGh123").mkdir()  # 不符
+        (tmp_path / CASE_A).mkdir()  # 未加密
+        results = scan_for_decryption(str(tmp_path))
+        assert results == ["20260115093000_XyZwAbCd0001", "20260206082130_AbCdEfGh1234"]
 
 
 class TestInspectFolderFiles:
     """檔案類型偵測測試"""
 
     def test_inspect_all_types(self, tmp_path):
-        folder = tmp_path / PATIENT
+        folder = tmp_path / CASE_A
         folder.mkdir()
         (folder / "data.jsonl").touch()
         (folder / "signal.edf").touch()
@@ -179,10 +142,10 @@ class TestInspectFolderFiles:
         assert info["other_count"] == 0
 
 
-def _make_case(source, folder_name):
-    """建立含各類檔案的來源案例資料夾（jpg 檔名模擬實際格式：資料夾名_編號）"""
-    folder = source / folder_name
-    folder.mkdir()
+def _make_case(source, group, folder_name):
+    """建立含各類檔案的案例資料夾（jpg 檔名模擬實際格式：資料夾名_編號）"""
+    folder = source / group / folder_name
+    folder.mkdir(parents=True)
     (folder / "data.jsonl").write_text("test jsonl")
     (folder / "signal.edf").write_bytes(b"edf data")
     (folder / f"{folder_name}_1.jpg").write_bytes(b"jpg1")
@@ -205,20 +168,20 @@ class TestCopyAndEncryptFolders:
 
     def test_patient_dispatched_under_patient_dir(self, dirs):
         source, output = dirs
-        _make_case(source, PATIENT)
+        _make_case(source, "patient", CASE_A)
 
         results = copy_and_encrypt_folders(
-            str(source), str(output), [PATIENT], "test_password"
+            str(source), str(output), [("patient", CASE_A)], "test_password"
         )
 
         assert len(results) == 1
         r = results[0]
         assert r["success"] is True
         assert r["group"] == "patient"
-        assert r["national_id"] == ""
         assert r["case_id"] == "12345678"
         assert r["datetime_str"] == "20260206082130"
         new_name = r["new_name"]
+        assert len(new_name) == 27
 
         base = output / "patient"
         assert (base / "radar" / f"{new_name}.jsonl").exists()
@@ -239,22 +202,17 @@ class TestCopyAndEncryptFolders:
 
     def test_control_dispatched_under_control_dir(self, dirs):
         source, output = dirs
-        _make_case(source, CONTROL)
+        _make_case(source, "control", CASE_C)
 
         results = copy_and_encrypt_folders(
-            str(source), str(output), [CONTROL], "test_password"
+            str(source), str(output), [("control", CASE_C)], "test_password"
         )
 
         r = results[0]
         assert r["success"] is True
         assert r["group"] == "control"
-        assert r["national_id"] == NATIONAL_ID
-        assert r["case_id"] == "12345678"
-        assert r["datetime_str"] == "20260206082130"
         new_name = r["new_name"]
-        assert len(new_name) == 29
-        assert new_name[25:] == "6789"  # 身份證號末 4 碼原文
-        assert NATIONAL_ID not in new_name
+        assert new_name == encrypt_folder_name(CASE_C, KEY)  # 與 patient 同一套規則
 
         base = output / "control"
         assert (base / "radar" / f"{new_name}.jsonl").exists()
@@ -263,37 +221,33 @@ class TestCopyAndEncryptFolders:
         assert (base / "other" / new_name / "notes.txt").exists()
         assert not (output / "patient").exists()
 
-    def test_mixed_groups_go_to_separate_trees(self, dirs):
-        """同病歷號同時間的 patient 與 control：token 不同（病歷號 vs 身份證號），各自進自己的群組樹"""
+    def test_same_name_in_both_groups_goes_to_separate_trees(self, dirs):
+        """同名案例同時在 patient/ 與 control/：加密名相同，但分屬不同群組樹，互不影響"""
         source, output = dirs
-        _make_case(source, PATIENT)
-        _make_case(source, CONTROL)
+        _make_case(source, "patient", CASE_A)
+        _make_case(source, "control", CASE_A)
 
         results = copy_and_encrypt_folders(
-            str(source), str(output), [PATIENT, CONTROL], "test_password"
+            str(source), str(output), [("patient", CASE_A), ("control", CASE_A)], "test_password"
         )
 
         assert all(r["success"] for r in results)
-        by_group = {r["group"]: r for r in results}
-        patient_new = by_group["patient"]["new_name"]
-        control_new = by_group["control"]["new_name"]
-        assert patient_new != control_new
-        assert patient_new[:15] == control_new[:15]  # 同日期時間段
-        assert len(patient_new) == 27 and len(control_new) == 29
-        assert (output / "patient" / "radar" / f"{patient_new}.jsonl").exists()
-        assert (output / "control" / "radar" / f"{control_new}.jsonl").exists()
+        new_name = results[0]["new_name"]
+        assert results[1]["new_name"] == new_name
+        assert (output / "patient" / "radar" / f"{new_name}.jsonl").exists()
+        assert (output / "control" / "radar" / f"{new_name}.jsonl").exists()
 
     def test_skip_already_processed(self, dirs):
         source, output = dirs
-        _make_case(source, PATIENT)
+        _make_case(source, "patient", CASE_A)
 
         results1 = copy_and_encrypt_folders(
-            str(source), str(output), [PATIENT], "test_password"
+            str(source), str(output), [("patient", CASE_A)], "test_password"
         )
         assert results1[0]["success"] is True
 
         results2 = copy_and_encrypt_folders(
-            str(source), str(output), [PATIENT], "test_password"
+            str(source), str(output), [("patient", CASE_A)], "test_password"
         )
         assert results2[0]["skipped"] is True
         assert results2[0]["success"] is False
@@ -301,13 +255,13 @@ class TestCopyAndEncryptFolders:
     def test_acq_goes_to_mp36(self, dirs):
         source, output = dirs
         folder_name = "1111222220260301100000"
-        folder = source / folder_name
-        folder.mkdir()
+        folder = source / "patient" / folder_name
+        folder.mkdir(parents=True)
         (folder / "bio.acq").write_bytes(b"acq data")
         (folder / "dummy.jpg").write_bytes(b"jpg")
 
         results = copy_and_encrypt_folders(
-            str(source), str(output), [folder_name], "test_password"
+            str(source), str(output), [("patient", folder_name)], "test_password"
         )
 
         new_name = results[0]["new_name"]
@@ -315,9 +269,9 @@ class TestCopyAndEncryptFolders:
 
     def test_file_info_recorded(self, dirs):
         source, output = dirs
-        _make_case(source, PATIENT)
+        _make_case(source, "patient", CASE_A)
         results = copy_and_encrypt_folders(
-            str(source), str(output), [PATIENT], "test_password"
+            str(source), str(output), [("patient", CASE_A)], "test_password"
         )
         info = results[0]["file_info"]
         assert info["jpg_count"] == 3
@@ -329,13 +283,13 @@ class TestCopyAndEncryptFolders:
         """若無其他類型檔案，不應建立 other/<加密名> 子資料夾"""
         source, output = dirs
         folder_name = "5555666620260707120000"
-        folder = source / folder_name
-        folder.mkdir()
+        folder = source / "patient" / folder_name
+        folder.mkdir(parents=True)
         (folder / "data.jsonl").write_text("jsonl")
         (folder / "photo.jpg").write_bytes(b"jpg")
 
         results = copy_and_encrypt_folders(
-            str(source), str(output), [folder_name], "test_password"
+            str(source), str(output), [("patient", folder_name)], "test_password"
         )
         new_name = results[0]["new_name"]
         assert not (output / "patient" / "other" / new_name).exists()
@@ -344,46 +298,54 @@ class TestCopyAndEncryptFolders:
         """若無 jpg 檔案，不應建立 pic/<加密名> 子資料夾"""
         source, output = dirs
         folder_name = "7777888820260808140000"
-        folder = source / folder_name
-        folder.mkdir()
+        folder = source / "patient" / folder_name
+        folder.mkdir(parents=True)
         (folder / "data.jsonl").write_text("jsonl")
         (folder / "signal.edf").write_bytes(b"edf")
 
         results = copy_and_encrypt_folders(
-            str(source), str(output), [folder_name], "test_password"
+            str(source), str(output), [("patient", folder_name)], "test_password"
         )
         new_name = results[0]["new_name"]
         assert not (output / "patient" / "pic" / new_name).exists()
 
-    def test_invalid_name_reported_as_error(self, dirs):
+    def test_invalid_name_and_unknown_group_reported(self, dirs):
         source, output = dirs
         results = copy_and_encrypt_folders(
-            str(source), str(output), ["bad_name"], "test_password"
+            str(source), str(output), [("patient", "bad_name"), ("other", CASE_A)], "test_password"
+        )
+        assert [r["success"] for r in results] == [False, False]
+        assert "格式不符" in results[0]["error"]
+        assert "未知群組" in results[1]["error"]
+        assert not (output / "patient").exists()
+
+    def test_missing_source_folder_reported(self, dirs):
+        source, output = dirs
+        (source / "patient").mkdir()
+        results = copy_and_encrypt_folders(
+            str(source), str(output), [("patient", CASE_A)], "test_password"
         )
         assert results[0]["success"] is False
-        assert results[0]["skipped"] is False
-        assert "格式不符" in results[0]["error"]
-        assert not (output / "patient").exists()
-        assert not (output / "control").exists()
+        assert "找不到來源資料夾" in results[0]["error"]
 
 
 class TestRenameFolders:
-    """批次重命名測試"""
+    """批次重命名測試（單一資料夾內）"""
 
     def test_encrypt_rename(self, tmp_path):
-        (tmp_path / PATIENT).mkdir()
+        (tmp_path / CASE_A).mkdir()
 
-        results = rename_folders(str(tmp_path), [PATIENT], "password", "encrypt")
+        results = rename_folders(str(tmp_path), [CASE_A], "password", "encrypt")
 
         assert len(results) == 1
         assert results[0]["success"] is True
-        assert not (tmp_path / PATIENT).exists()
+        assert not (tmp_path / CASE_A).exists()
         assert (tmp_path / results[0]["new_name"]).exists()
 
     def test_decrypt_rename(self, tmp_path):
         password = "roundtrip"
-        (tmp_path / PATIENT).mkdir()
-        enc_results = rename_folders(str(tmp_path), [PATIENT], password, "encrypt")
+        (tmp_path / CASE_A).mkdir()
+        enc_results = rename_folders(str(tmp_path), [CASE_A], password, "encrypt")
         encrypted_name = enc_results[0]["new_name"]
 
         dec_results = rename_folders(
@@ -391,16 +353,16 @@ class TestRenameFolders:
         )
 
         assert dec_results[0]["success"] is True
-        assert dec_results[0]["new_name"] == PATIENT
-        assert (tmp_path / PATIENT).exists()
+        assert dec_results[0]["new_name"] == CASE_A
+        assert (tmp_path / CASE_A).exists()
 
     def test_target_already_exists(self, tmp_path):
-        (tmp_path / PATIENT).mkdir()
+        (tmp_path / CASE_A).mkdir()
 
-        target_name = encrypt_folder_name(PATIENT, derive_key("password"))
+        target_name = encrypt_folder_name(CASE_A, derive_key("password"))
         (tmp_path / target_name).mkdir()
 
-        results = rename_folders(str(tmp_path), [PATIENT], "password", "encrypt")
+        results = rename_folders(str(tmp_path), [CASE_A], "password", "encrypt")
 
         assert results[0]["success"] is False
         assert "已存在" in results[0]["error"]

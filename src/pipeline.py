@@ -15,18 +15,18 @@ def run_encryption(
     output_dir: str,
     csv_dir: str,
     password: str,
-    folder_names: list[str] | None = None,
+    cases: list[tuple[str, str]] | None = None,
     backup_dir: str | Path | None = None,
 ) -> dict:
     """
     執行一次完整加密流程
 
     Args:
-        source_dir: 來源父資料夾
-        output_dir: 輸出父資料夾（底下自動分 patient / control）
+        source_dir: 來源父資料夾（底下分 patient/ 與 control/）
+        output_dir: 輸出父資料夾（底下自動分 patient/ 與 control/）
         csv_dir: summary.csv 存放資料夾（不存在則建立）
         password: 加密密碼
-        folder_names: 要處理的子資料夾；None 表示掃描 source_dir 下全部符合格式者
+        cases: 要處理的 [(group, name), ...]；None 表示掃描 source_dir 下全部符合格式者
         backup_dir: 備份夾；None 用 csv_reporter.BACKUP_DIR
 
     Returns:
@@ -37,14 +37,17 @@ def run_encryption(
         - processed_csv: processed.csv 路徑（無成功項目時為 None）
         - backup: {"summary": 路徑, "processed": 路徑}（未備份為空 dict）
         - backup_error: 備份失敗訊息（成功為 None）；備份失敗不中斷主流程
+
+    Raises:
+        LayoutError: cases 為 None 且來源夾頂層直接放了 22 碼資料夾（舊版擺法）
     """
-    if folder_names is None:
-        folder_names = scan_for_encryption(source_dir)
+    if cases is None:
+        cases = scan_for_encryption(source_dir)
 
     Path(csv_dir).mkdir(parents=True, exist_ok=True)
     csv_path = str(Path(csv_dir) / "summary.csv")
 
-    results = copy_and_encrypt_folders(source_dir, output_dir, folder_names, password)
+    results = copy_and_encrypt_folders(source_dir, output_dir, cases, password)
 
     success_count = sum(1 for r in results if r["success"])
     skipped_count = sum(1 for r in results if r["skipped"])

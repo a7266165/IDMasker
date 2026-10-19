@@ -10,20 +10,21 @@ from tkinter import ttk, filedialog, messagebox
 import threading
 from pathlib import Path
 
-from src.folder_scanner import GROUP_PATIENT, GROUP_CONTROL, classify_folder, scan_for_encryption
+from src.folder_scanner import GROUP_PATIENT, GROUP_CONTROL, LayoutError, scan_for_encryption
 from src.csv_reporter import BACKUP_DIR
 from src.pipeline import run_encryption
+from src.migrate import apply_legacy_migration, format_actions, plan_legacy_migration
 
 
 class IDMaskerApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("IDMasker 去識別化工具")
-        self.root.geometry("680x700")
-        self.root.minsize(520, 600)
+        self.root.geometry("680x720")
+        self.root.minsize(520, 620)
         self.root.resizable(True, True)
 
-        self.scanned_folders: list[str] = []
+        self.scanned_cases: list[tuple[str, str]] = []
         self.check_vars: list[tk.BooleanVar] = []
 
         self._build_ui()
@@ -133,6 +134,13 @@ class IDMaskerApp:
         self.run_btn.grid(row=row, column=0, sticky="ew", pady=(0, 8))
         row += 1
 
+        # --- 升級舊版結構（一次性） ---
+        ttk.Button(
+            main, text="升級舊版結構（一次性：把舊版來源 / 輸出 / CSV 改成 patient 分層）",
+            command=self._run_migrate,
+        ).grid(row=row, column=0, sticky="ew", pady=(0, 8))
+        row += 1
+
         # --- 狀態列 ---
         self.status_var = tk.StringVar(value="就緒")
         ttk.Label(main, textvariable=self.status_var, foreground="gray").grid(
@@ -208,7 +216,11 @@ class IDMaskerApp:
             return
 
         try:
-            folders = scan_for_encryption(source)
+            cases = scan_for_encryption(source)
+        except LayoutError as e:
+            self.status_var.set("來源夾結構不符，請先升級舊版結構")
+            messagebox.showerror("來源夾結構不符", str(e))
+            return
         except FileNotFoundError as e:
             messagebox.showerror("錯誤", str(e))
             return
@@ -217,17 +229,18 @@ class IDMaskerApp:
         for widget in self.checklist_frame.winfo_children():
             widget.destroy()
 
-        self.scanned_folders = folders
+        self.scanned_cases = cases
         self.check_vars = []
 
-        if not folders:
-            ttk.Label(self.checklist_frame, text="（未找到符合格式的資料夾）").pack(anchor="w")
+        if not cases:
+            ttk.Label(
+                self.checklist_frame, text="（patient/ 與 control/ 內未找到符合格式的資料夾）"
+            ).pack(anchor="w")
             self.status_var.set("掃描完成，無符合格式的資料夾")
             return
 
         counts = {GROUP_PATIENT: 0, GROUP_CONTROL: 0}
-        for name in folders:
-            group = classify_folder(name)
+        for group, name in cases:
             counts[group] += 1
             var = tk.BooleanVar(value=True)
             self.check_vars.append(var)
@@ -236,7 +249,7 @@ class IDMaskerApp:
             ).pack(anchor="w")
 
         self.status_var.set(
-            f"掃描完成，找到 {len(folders)} 個資料夾"
+            f"掃描完成，找到 {len(cases)} 個資料夾"
             f"（patient {counts[GROUP_PATIENT]}、control {counts[GROUP_CONTROL]}）"
         )
 
@@ -247,6 +260,13 @@ class IDMaskerApp:
     def _deselect_all(self):
         for var in self.check_vars:
             var.set(False)
+
+    def _selected_cases(self) -> list[tuple[str, str]]:
+        return [
+            self.scanned_cases[i]
+            for i, var in enumerate(self.check_vars)
+            if var.get()
+        ]
 
     # ----- 執行加密 -----
 
@@ -266,13 +286,7 @@ class IDMaskerApp:
         if self.pw_var.get() != self.pw_confirm_var.get():
             messagebox.showerror("錯誤", "兩次密碼輸入不一致")
             return False
-
-        selected = [
-            self.scanned_folders[i]
-            for i, var in enumerate(self.check_vars)
-            if var.get()
-        ]
-        if not selected:
+        if not self._selected_cases():
             messagebox.showwarning("警告", "請至少勾選一個資料夾")
             return False
 
@@ -285,11 +299,7 @@ class IDMaskerApp:
         if not self._check_password_consistency(self.pw_var.get()):
             return
 
-        selected = [
-            self.scanned_folders[i]
-            for i, var in enumerate(self.check_vars)
-            if var.get()
-        ]
+        selected = self._selected_cases()
         source = self.source_var.get().strip()
         output = self.output_var.get().strip()
         csv_dir = self.csv_var.get().strip()
@@ -302,7 +312,7 @@ class IDMaskerApp:
             try:
                 # 加密複製、CSV、備份（只保留最新一版；備份失敗不中斷）
                 summary = run_encryption(
-                    source, output, csv_dir, password, folder_names=selected
+                    source, output, csv_dir, password, cases=selected
                 )
 
                 # 回到主執行緒更新 UI
@@ -343,11 +353,11 @@ class IDMaskerApp:
         msg += "\n"
 
         if skipped:
-            skipped_names = "\n".join(f"  {r['old_name']}" for r in skipped)
+            skipped_names = "\n".join(f"  [{r['group']}] {r['old_name']}" for r in skipped)
             msg += f"\n已處理過（跳過）: {len(skipped)} 個\n{skipped_names}\n"
 
         if errors:
-            error_msgs = "\n".join(f"  {r['old_name']}: {r['error']}" for r in errors)
+            error_msgs = "\n".join(f"  [{r['group']}] {r['old_name']}: {r['error']}" for r in errors)
             msg += f"\n失敗: {len(errors)} 個\n{error_msgs}\n"
 
         if success > 0:
@@ -365,6 +375,42 @@ class IDMaskerApp:
         self.run_btn.configure(state="normal")
         self.status_var.set("錯誤")
         messagebox.showerror("錯誤", msg)
+
+    # ----- 升級舊版結構 -----
+
+    def _run_migrate(self):
+        source = self.source_var.get().strip()
+        output = self.output_var.get().strip()
+        csv_dir = self.csv_var.get().strip()
+        if not (source and output and csv_dir):
+            messagebox.showwarning("警告", "請先填來源資料夾、輸出資料夾與 Summary CSV 資料夾")
+            return
+
+        try:
+            plan = plan_legacy_migration(source, output, csv_dir)
+        except Exception as e:
+            messagebox.showerror("錯誤", str(e))
+            return
+
+        if not plan:
+            messagebox.showinfo("升級舊版結構", "沒有需要升級的項目。")
+            return
+
+        if not messagebox.askyesno(
+            "升級舊版結構",
+            "將執行以下動作（舊版資料全部歸入 patient/；同名目標不覆寫）：\n\n"
+            + format_actions(plan)
+            + "\n\n是否繼續？",
+        ):
+            return
+
+        results = apply_legacy_migration(plan)
+        ok = all(r["status"] in ("done", "skipped") for r in results)
+        self.status_var.set("升級完成" if ok else "升級完成（有衝突或錯誤）")
+        (messagebox.showinfo if ok else messagebox.showwarning)(
+            "升級完成" if ok else "升級完成（有衝突或錯誤）",
+            format_actions(results) + "\n\n請重新「掃描資料夾」。",
+        )
 
 
 def run_gui():

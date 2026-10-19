@@ -1,8 +1,9 @@
 """
 產生手動測試（GUI）用的假資料
 
-workspace/manual_source/   5 個 patient + 5 個 control 案例資料夾（各含 jsonl、edf 或 acq、jpg、txt）
-workspace/manual_output/   空的輸出測試夾；GUI 的「輸出資料夾」與「Summary CSV 資料夾」都可指到這裡
+workspace/manual_source/patient/   5 個案例資料夾（各含 jsonl、edf 或 acq、jpg、txt）
+workspace/manual_source/control/   5 個案例資料夾（格式與 patient 相同：8 碼編號 + 14 碼日期時間）
+workspace/manual_output/           空的輸出測試夾；GUI 的「輸出資料夾」與「Summary CSV 資料夾」都可指到這裡
 
 用法（在 repo 根執行）:
     python scripts/make_manual_fixtures.py          # 已存在時不動
@@ -24,23 +25,23 @@ WORKSPACE = REPO / "workspace"
 SOURCE = WORKSPACE / "manual_source"
 OUTPUT = WORKSPACE / "manual_output"
 
-# (病歷號, 日期時間, jpg 數, 訊號檔副檔名, 是否有 notes.txt)
-PATIENTS = [
-    ("00510142", "20260206082130", 3, ".edf", True),
-    ("00510143", "20260206091500", 2, ".acq", False),
-    ("00523377", "20260212101045", 0, ".edf", True),   # 無 jpg
-    ("01087265", "20260303140210", 1, ".edf", False),
-    ("12345678", "20260318155900", 2, ".acq", True),
-]
-
-# (身份證號, 病歷號, 日期時間, jpg 數, 訊號檔副檔名, 是否有 notes.txt)
-CONTROLS = [
-    ("A123456789", "20000001", "20260405093015", 2, ".edf", True),
-    ("B287654321", "20000002", "20260405104530", 3, ".acq", False),
-    ("F131234567", "20000003", "20260410111200", 1, ".edf", True),
-    ("H224567890", "20000004", "20260422133345", 0, ".acq", False),  # 無 jpg
-    ("T198765432", "20000005", "20260501090000", 2, ".edf", True),
-]
+# group -> [(22 碼案例名, jpg 數, 訊號檔副檔名, 是否有 notes.txt), ...]
+CASES = {
+    "patient": [
+        ("0051014220260206082130", 3, ".edf", True),
+        ("0051014320260206091500", 2, ".acq", False),
+        ("0052337720260212101045", 0, ".edf", True),   # 無 jpg
+        ("0108726520260303140210", 1, ".edf", False),
+        ("1234567820260318155900", 2, ".acq", True),
+    ],
+    "control": [
+        ("2000000120260405093015", 2, ".edf", True),
+        ("2000000220260405104530", 3, ".acq", False),
+        ("2000000320260410111200", 1, ".edf", True),
+        ("2000000420260422133345", 0, ".acq", False),  # 無 jpg
+        ("2000000520260501090000", 2, ".edf", True),
+    ],
+}
 
 
 def _write_case(folder: Path, jpg_count: int, signal_ext: str, has_notes: bool) -> None:
@@ -74,11 +75,11 @@ def main() -> int:
         d.mkdir(parents=True)
 
     if not any(SOURCE.iterdir()):
-        for case_id, dt, jpgs, ext, notes in PATIENTS:
-            _write_case(SOURCE / f"{case_id}{dt}", jpgs, ext, notes)
-        for nid, case_id, dt, jpgs, ext, notes in CONTROLS:
-            _write_case(SOURCE / f"{nid}{case_id}{dt}", jpgs, ext, notes)
-        print(f"來源假資料: {SOURCE}（patient {len(PATIENTS)}、control {len(CONTROLS)}）")
+        for group, cases in CASES.items():
+            for name, jpgs, ext, notes in cases:
+                _write_case(SOURCE / group / name, jpgs, ext, notes)
+        counts = "、".join(f"{g} {len(c)}" for g, c in CASES.items())
+        print(f"來源假資料: {SOURCE}（{counts}）")
 
     print(f"輸出測試夾: {OUTPUT}")
     return 0

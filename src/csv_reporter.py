@@ -16,7 +16,6 @@ _DEFAULT_BACKUP_DIR = Path.home() / "Documents" / "IDMasker" / "Backups"
 
 SUMMARY_HEADER = [
     "群組",
-    "身份證號",
     "原始病例編號",
     "日期",
     "時分秒",
@@ -32,7 +31,6 @@ SUMMARY_HEADER = [
 
 PROCESSED_HEADER = [
     "群組",
-    "身份證號",
     "病例號碼",
     "日期",
     "時間",
@@ -40,7 +38,7 @@ PROCESSED_HEADER = [
     "轉檔時間",
 ]
 
-# 舊版 CSV 沒有群組 / 身份證號欄；當時只有 patient 一種來源，升級表頭時補上
+# 舊版 CSV 沒有群組欄；當時只有 patient 一種來源，升級表頭時補上
 _MIGRATE_DEFAULTS = {"群組": "patient"}
 
 _TIMESTAMP_RE = r"\d{8}_\d{6}"
@@ -78,23 +76,60 @@ def _excel_text(value: str) -> str:
     return f'="{value}"'
 
 
+def _read_csv(path: Path) -> tuple[list[str] | None, list[list[str]]]:
+    """讀 CSV；回 (表頭, 資料列)。檔案不存在或為空回 (None, [])"""
+    if not path.exists() or path.stat().st_size == 0:
+        return None, []
+    with open(path, "r", newline="", encoding="utf-8-sig") as f:
+        reader = csv.reader(f)
+        header = next(reader, None)
+        return header, list(reader)
+
+
+def _rewrite_csv(
+    path: Path,
+    header: list[str],
+    old_header: list[str],
+    old_rows: list[list[str]],
+    new_rows: list[list],
+) -> None:
+    """依新表頭重寫：舊列依欄名對應，缺欄補 _MIGRATE_DEFAULTS 或空值，多餘欄丟棄；經暫存檔後原子取代"""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        writer.writerow(header)
+        for row in old_rows:
+            d = dict(zip(old_header, row))
+            writer.writerow([d.get(col, _MIGRATE_DEFAULTS.get(col, "")) for col in header])
+        writer.writerows(new_rows)
+    os.replace(tmp, path)
+
+
+def upgrade_csv_header(csv_path: str, header: list[str]) -> bool:
+    """
+    把既有 CSV 的表頭升級成 header（舊列缺欄補 _MIGRATE_DEFAULTS 或空值，多餘欄丟棄）
+
+    檔案不存在、為空或表頭已相同則不動。
+
+    Returns:
+        是否有重寫
+    """
+    path = Path(csv_path)
+    old_header, old_rows = _read_csv(path)
+    if old_header is None or old_header == header:
+        return False
+    _rewrite_csv(path, header, old_header, old_rows, [])
+    return True
+
+
 def _append_rows(csv_path: str, header: list[str], rows: list[list]) -> None:
     """
     追加資料列；檔案不存在或為空則先寫表頭。
 
-    若既有表頭與目前不同（舊版欄位），先讀出舊資料、依新表頭重寫
-    （缺欄補 _MIGRATE_DEFAULTS 或空值）再追加，避免同一檔內欄數不一致。
-    重寫經暫存檔後以 os.replace 原子取代。
+    若既有表頭與目前不同（舊版欄位），先依新表頭重寫舊資料再追加，避免同一檔內欄數不一致。
     """
     path = Path(csv_path)
-    old_header = None
-    old_rows: list[dict] = []
-    if path.exists() and path.stat().st_size > 0:
-        with open(path, "r", newline="", encoding="utf-8-sig") as f:
-            reader = csv.reader(f)
-            old_header = next(reader, None)
-            if old_header is not None and old_header != header:
-                old_rows = [dict(zip(old_header, r)) for r in reader]
+    old_header, old_rows = _read_csv(path)
 
     if old_header is None:
         with open(path, "w", newline="", encoding="utf-8-sig") as f:
@@ -108,14 +143,7 @@ def _append_rows(csv_path: str, header: list[str], rows: list[list]) -> None:
             csv.writer(f).writerows(rows)
         return
 
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with open(tmp, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.writer(f)
-        writer.writerow(header)
-        for d in old_rows:
-            writer.writerow([d.get(col, _MIGRATE_DEFAULTS.get(col, "")) for col in header])
-        writer.writerows(rows)
-    os.replace(tmp, path)
+    _rewrite_csv(path, header, old_header, old_rows, rows)
 
 
 def generate_summary_csv(results: list[dict], password: str, csv_path: str) -> None:
@@ -134,7 +162,6 @@ def generate_summary_csv(results: list[dict], password: str, csv_path: str) -> N
         datetime_str = r["datetime_str"]  # YYYYMMDDHHMMSS
         rows.append([
             r["group"],
-            r["national_id"],
             _excel_text(r["case_id"]),
             _excel_text(datetime_str[:8]),
             _excel_text(datetime_str[8:]),
@@ -153,7 +180,7 @@ def generate_summary_csv(results: list[dict], password: str, csv_path: str) -> N
 
 def generate_processed_csv(results: list[dict], source_dir: str) -> str:
     """
-    產生 processed.csv（處理紀錄），輸出到來源資料夾，追加寫入
+    產生 processed.csv（處理紀錄），輸出到來源夾頂層，追加寫入
 
     欄位見 PROCESSED_HEADER；舊版表頭會自動升級（見 _append_rows）。
 
@@ -170,7 +197,6 @@ def generate_processed_csv(results: list[dict], source_dir: str) -> str:
         datetime_str = r["datetime_str"]  # YYYYMMDDHHMMSS
         rows.append([
             r["group"],
-            r["national_id"],
             _excel_text(r["case_id"]),
             _excel_text(datetime_str[:8]),   # YYYYMMDD
             _excel_text(datetime_str[8:]),   # HHMMSS
