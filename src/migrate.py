@@ -3,7 +3,8 @@ IDMasker 舊版結構升級（一次性）
 
 原始版沒有 patient/control 分層，且只有 patient 一種來源，升級時全部歸入 patient/：
 - 來源夾：頂層 22 碼案例資料夾 → patient/<同名>；processed.csv 表頭升級，舊列群組補 patient
-- 輸出夾：頂層 radar/MP36/pic/other → patient/ 底下（目標已存在則逐檔併入）
+- 輸出夾：頂層 radar/MP36/pic/other → patient/ 底下，pic 同時改名 tongue_image（目標已存在則逐檔併入）
+- 輸出夾：patient/pic、control/pic（改名前的中間版）→ 同群組 tongue_image/（目標已存在則逐檔併入）
 - summary.csv：表頭升級，舊列群組補 patient
 
 分「列計畫」（plan_legacy_migration，只讀）與「執行」（apply_legacy_migration）兩步。
@@ -15,11 +16,16 @@ from collections import Counter
 from pathlib import Path
 
 from src.csv_reporter import PROCESSED_HEADER, SUMMARY_HEADER, _read_csv, upgrade_csv_header
-from src.folder_scanner import GROUP_PATIENT, SUBDIRS, find_legacy_case_dirs
+from src.folder_scanner import GROUP_PATIENT, GROUPS, find_legacy_case_dirs
+
+# 舊版輸出子夾名；pic 已改名 tongue_image，升級時一併改
+LEGACY_SUBDIRS = ("radar", "MP36", "pic", "other")
+SUBDIR_RENAME = {"pic": "tongue_image"}
 
 KIND_LABEL = {
     "move_case": "移動案例資料夾到 patient/",
     "move_dir": "移動輸出子夾到 patient/",
+    "rename_dir": "輸出子夾 pic 改名 tongue_image",
     "move_file": "併入輸出檔案到 patient/",
     "upgrade_csv": "升級 CSV 表頭",
 }
@@ -48,6 +54,23 @@ def _needs_upgrade(path: Path, header: list[str]) -> bool:
     return old_header is not None and old_header != header
 
 
+def _plan_dir_move(
+    actions: list[dict], kind: str, old: Path, new: Path, label: str, file_prefix: str
+) -> None:
+    """整夾搬移；目標已存在則逐檔併入（同名檔列為 conflict）"""
+    if not new.exists():
+        actions.append(_action(kind, old, new, "planned", label))
+        return
+    for f in sorted(p for p in old.rglob("*") if p.is_file()):
+        rel = f.relative_to(old)
+        dst = new / rel
+        actions.append(_action(
+            "move_file", f, dst,
+            "conflict" if dst.exists() else "planned",
+            f"{file_prefix}/{rel.as_posix()}", root=old,
+        ))
+
+
 def plan_legacy_migration(source_dir: str, output_dir: str, csv_dir: str) -> list[dict]:
     """
     列出升級要做的動作，不改任何東西
@@ -73,22 +96,24 @@ def plan_legacy_migration(source_dir: str, output_dir: str, csv_dir: str) -> lis
             actions.append(_action("upgrade_csv", processed, processed, "planned", "processed.csv"))
 
     if output.is_dir():
-        for sub in SUBDIRS:
+        for sub in LEGACY_SUBDIRS:
             old = output / sub
             if not old.is_dir():
                 continue
-            new = output / GROUP_PATIENT / sub
-            if not new.exists():
-                actions.append(_action("move_dir", old, new, "planned", sub))
-                continue
-            for f in sorted(p for p in old.rglob("*") if p.is_file()):
-                rel = f.relative_to(old)
-                dst = new / rel
-                actions.append(_action(
-                    "move_file", f, dst,
-                    "conflict" if dst.exists() else "planned",
-                    f"{sub}/{rel.as_posix()}", root=old,
-                ))
+            new_sub = SUBDIR_RENAME.get(sub, sub)
+            new = output / GROUP_PATIENT / new_sub
+            label = sub if new_sub == sub else f"{sub} → {new_sub}"
+            _plan_dir_move(actions, "move_dir", old, new, label, sub)
+        for group in GROUPS:
+            for old_sub, new_sub in SUBDIR_RENAME.items():
+                old = output / group / old_sub
+                if not old.is_dir():
+                    continue
+                new = output / group / new_sub
+                _plan_dir_move(
+                    actions, "rename_dir", old, new,
+                    f"{group}/{old_sub} → {new_sub}", f"{group}/{old_sub}",
+                )
 
     summary = Path(csv_dir) / "summary.csv"
     if _needs_upgrade(summary, SUMMARY_HEADER):
@@ -129,7 +154,7 @@ def apply_legacy_migration(actions: list[dict]) -> list[dict]:
             continue
         try:
             src, dst = Path(a["src"]), Path(a["dst"])
-            if a["kind"] in ("move_case", "move_dir", "move_file"):
+            if a["kind"] in ("move_case", "move_dir", "rename_dir", "move_file"):
                 if dst.exists():
                     r["status"] = "conflict"
                 else:

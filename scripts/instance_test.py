@@ -200,7 +200,7 @@ def verify_first_run(c: Checker, dirs: dict[str, Path], report: Path, proc) -> N
             elif ext in (".jpg", ".jpeg"):
                 has_jpg = True
                 seq = Path(fname).stem.rsplit("_", 1)[-1]
-                p = base / "pic" / new / f"{new}_{seq}.jpg"
+                p = base / "tongue_image" / new / f"{new}_{seq}.jpg"
             else:
                 p = base / "other" / new / fname
             total_expected += 1
@@ -208,11 +208,11 @@ def verify_first_run(c: Checker, dirs: dict[str, Path], report: Path, proc) -> N
                 missing.append(str(p.relative_to(out)))
         c.check(f"輸出檔案齊全 {group} {name}", not missing, "缺: " + ", ".join(missing))
         if not has_jpg:
-            c.check(f"無 jpg 不建 pic 子夾 {group} {name}", not (base / "pic" / new).exists())
+            c.check(f"無 jpg 不建 tongue_image 子夾 {group} {name}", not (base / "tongue_image" / new).exists())
 
     for g in ("patient", "control"):
         c.check(f"{g}/ 四個子夾存在", all((out / g / s).is_dir() for s in SUBDIRS))
-    c.check("輸出夾頂層沒有 radar/MP36/pic/other", not any((out / s).exists() for s in SUBDIRS))
+    c.check("輸出夾頂層沒有 radar/MP36/tongue_image/other", not any((out / s).exists() for s in SUBDIRS))
 
     all_paths = [str(p.relative_to(out)) for p in out.rglob("*")]
     files_only = [p for p in out.rglob("*") if p.is_file()]
@@ -341,7 +341,8 @@ def verify_migration(c: Checker, prefix: list[str], ws: Path) -> None:
             and not any((source / n).exists() for n in LEGACY_CASES))
     c.check("migrate 輸出子夾進 patient/",
             (output / "patient" / "radar" / f"{LEGACY_ENC}.jsonl").exists()
-            and (output / "patient" / "pic" / LEGACY_ENC / f"{LEGACY_ENC}_1.jpg").exists()
+            and (output / "patient" / "tongue_image" / LEGACY_ENC / f"{LEGACY_ENC}_1.jpg").exists()
+            and not (output / "patient" / "pic").exists()
             and (output / "patient" / "other" / LEGACY_ENC / "notes.txt").exists()
             and not any((output / s).exists() for s in SUBDIRS))
     c.check("migrate processed.csv 升級",

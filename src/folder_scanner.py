@@ -22,7 +22,7 @@ GROUP_PATIENT = "patient"
 GROUP_CONTROL = "control"
 GROUPS = (GROUP_PATIENT, GROUP_CONTROL)
 
-SUBDIRS = ("radar", "MP36", "pic", "other")
+SUBDIRS = ("radar", "MP36", "tongue_image", "other")
 
 
 class LayoutError(ValueError):
@@ -176,10 +176,10 @@ def copy_and_encrypt_folders(
 
     來源：source/<group>/<22碼案例>
     輸出（<group> 為 patient 或 control，只建立有處理到的群組）:
-        output/<group>/radar/   .json / .jsonl（加密名稱.副檔名）
-        output/<group>/MP36/    .edf / .acq（加密名稱.副檔名）
-        output/<group>/pic/     .jpg / .jpeg（加密名稱/加密名稱_原編號.jpg）
-        output/<group>/other/   其他檔案（加密名稱/原檔名）
+        output/<group>/radar/         .json / .jsonl（加密名稱.副檔名）
+        output/<group>/MP36/          .edf / .acq（加密名稱.副檔名）
+        output/<group>/tongue_image/  .jpg / .jpeg（加密名稱/加密名稱_原編號.jpg）
+        output/<group>/other/         其他檔案（加密名稱/原檔名）
 
     Args:
         source_dir: 來源父資料夾路徑
@@ -222,18 +222,18 @@ def copy_and_encrypt_folders(
                 raise FileNotFoundError(f"找不到來源資料夾: {src_path}")
 
             group_dir = output / group
-            radar_dir, mp36_dir, pic_dir, other_dir = (group_dir / s for s in SUBDIRS)
+            radar_dir, mp36_dir, tongue_dir, other_dir = (group_dir / s for s in SUBDIRS)
             if group not in prepared_groups:
-                for d in (radar_dir, mp36_dir, pic_dir, other_dir):
+                for d in (radar_dir, mp36_dir, tongue_dir, other_dir):
                     d.mkdir(parents=True, exist_ok=True)
                 prepared_groups.add(group)
 
             # 檢查是否已處理（該群組任一子資料夾下有此加密名稱）
-            pic_case_dir = pic_dir / new_name
+            tongue_case_dir = tongue_dir / new_name
             already_processed = any(
                 (d / new_name).exists()
                 or list(d.glob(f"{new_name}.*"))
-                for d in (radar_dir, mp36_dir, pic_dir, other_dir)
+                for d in (radar_dir, mp36_dir, tongue_dir, other_dir)
             )
             if already_processed:
                 result["skipped"] = True
@@ -256,12 +256,12 @@ def copy_and_encrypt_folders(
                     elif ext in (".edf", ".acq"):
                         shutil.copy2(f, mp36_dir / (new_name + ext))
                     elif ext in (".jpg", ".jpeg"):
-                        pic_case_dir.mkdir(parents=True, exist_ok=True)
+                        tongue_case_dir.mkdir(parents=True, exist_ok=True)
                         # 取底線後的編號（如 00510142_3.jpg 取 3）
                         parts = f.stem.rsplit("_", 1)
                         seq = parts[-1] if len(parts) > 1 else f.stem
                         shutil.copy2(
-                            f, pic_case_dir / f"{new_name}_{seq}.jpg"
+                            f, tongue_case_dir / f"{new_name}_{seq}.jpg"
                         )
                     else:
                         other_case_dir.mkdir(parents=True, exist_ok=True)

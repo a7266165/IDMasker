@@ -187,11 +187,11 @@ class TestCopyAndEncryptFolders:
         assert (base / "radar" / f"{new_name}.jsonl").exists()
         assert (base / "MP36" / f"{new_name}.edf").exists()
 
-        pic_dir = base / "pic" / new_name
-        assert pic_dir.is_dir()
-        assert (pic_dir / f"{new_name}_1.jpg").exists()
-        assert (pic_dir / f"{new_name}_3.jpg").exists()
-        assert (pic_dir / f"{new_name}_6.jpg").exists()
+        tongue_dir = base / "tongue_image" / new_name
+        assert tongue_dir.is_dir()
+        assert (tongue_dir / f"{new_name}_1.jpg").exists()
+        assert (tongue_dir / f"{new_name}_3.jpg").exists()
+        assert (tongue_dir / f"{new_name}_6.jpg").exists()
 
         other_dir = base / "other" / new_name
         assert other_dir.is_dir()
@@ -217,7 +217,7 @@ class TestCopyAndEncryptFolders:
         base = output / "control"
         assert (base / "radar" / f"{new_name}.jsonl").exists()
         assert (base / "MP36" / f"{new_name}.edf").exists()
-        assert (base / "pic" / new_name / f"{new_name}_1.jpg").exists()
+        assert (base / "tongue_image" / new_name / f"{new_name}_1.jpg").exists()
         assert (base / "other" / new_name / "notes.txt").exists()
         assert not (output / "patient").exists()
 
@@ -294,8 +294,8 @@ class TestCopyAndEncryptFolders:
         new_name = results[0]["new_name"]
         assert not (output / "patient" / "other" / new_name).exists()
 
-    def test_no_jpg_files_no_pic_dir(self, dirs):
-        """若無 jpg 檔案，不應建立 pic/<加密名> 子資料夾"""
+    def test_no_jpg_files_no_tongue_image_dir(self, dirs):
+        """若無 jpg 檔案，不應建立 tongue_image/<加密名> 子資料夾"""
         source, output = dirs
         folder_name = "7777888820260808140000"
         folder = source / "patient" / folder_name
@@ -307,7 +307,7 @@ class TestCopyAndEncryptFolders:
             str(source), str(output), [("patient", folder_name)], "test_password"
         )
         new_name = results[0]["new_name"]
-        assert not (output / "patient" / "pic" / new_name).exists()
+        assert not (output / "patient" / "tongue_image" / new_name).exists()
 
     def test_invalid_name_and_unknown_group_reported(self, dirs):
         source, output = dirs

@@ -16,7 +16,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cli", action="store_true", help="無介面模式：直接執行加密流程")
     parser.add_argument(
         "--migrate", action="store_true",
-        help="升級舊版結構：來源夾頂層案例、輸出夾頂層 radar/MP36/pic/other 搬進 patient/，CSV 表頭升級",
+        help="升級舊版結構：來源夾頂層案例、輸出夾頂層 radar/MP36/pic/other 搬進 patient/（pic 改名 tongue_image），CSV 表頭升級",
     )
     parser.add_argument("--dry-run", action="store_true", help="與 --migrate 併用：只列計畫，不改任何東西")
     parser.add_argument("--source", help="來源資料夾（底下分 patient/ 與 control/）")

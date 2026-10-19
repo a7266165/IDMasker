@@ -36,15 +36,15 @@
 ```
 <輸出夾>/
 ├── patient/
-│   ├── radar/   <加密名>.jsonl 或 .json
-│   ├── MP36/    <加密名>.edf 或 .acq
-│   ├── pic/     <加密名>/<加密名>_<原編號>.jpg
-│   └── other/   <加密名>/<原檔名>
+│   ├── radar/         <加密名>.jsonl 或 .json
+│   ├── MP36/          <加密名>.edf 或 .acq
+│   ├── tongue_image/  <加密名>/<加密名>_<原編號>.jpg
+│   └── other/         <加密名>/<原檔名>
 └── control/
     └── （結構同上）
 ```
 - 只建立有處理到的群組；每個群組的四個子資料夾一律建立
-- pic 檔名的「原編號」取自來源 jpg 檔名最後一個底線後的字串（`..._3.jpg` 取 `3`），無底線時用整個檔名主幹
+- tongue_image 檔名的「原編號」取自來源 jpg 檔名最後一個底線後的字串（`..._3.jpg` 取 `3`），無底線時用整個檔名主幹
 - 「已處理」判斷：該群組四個子資料夾中任一存在 `<加密名>` 或 `<加密名>.*`
 - 同名案例同時在 patient/ 與 control/：加密名相同，但分屬不同群組樹，互不影響
 
@@ -155,7 +155,8 @@ PBKDF2-HMAC-SHA256，固定 salt `IDMasker_v1_salt`，100,000 次迭代，256-bi
 |---|---|
 | 來源夾頂層 22 碼案例資料夾 | 搬到 `patient/<同名>` |
 | 來源夾 processed.csv | 表頭升級，舊列群組補 patient |
-| 輸出夾頂層 radar / MP36 / pic / other | 搬到 `patient/` 底下；目標已存在則逐檔併入 |
+| 輸出夾頂層 radar / MP36 / pic / other | 搬到 `patient/` 底下，`pic` 改名 `tongue_image`；目標已存在則逐檔併入 |
+| 輸出夾 `patient/pic`、`control/pic`（改名前的中間版） | 改名為同群組的 `tongue_image/`；目標已存在則逐檔併入 |
 | summary.csv | 表頭升級，舊列群組補 patient |
 
 - 分「列計畫」與「執行」兩步：GUI 按鈕先彈出計畫清單，按「是」才執行；CLI 用 `--dry-run` 只列計畫

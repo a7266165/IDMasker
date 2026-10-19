@@ -66,7 +66,7 @@ class TestPlan:
         kinds = sorted((a["kind"], a["label"]) for a in plan)
         assert kinds == sorted([
             ("move_case", CASE_A), ("move_case", CASE_B),
-            ("move_dir", "radar"), ("move_dir", "MP36"), ("move_dir", "pic"), ("move_dir", "other"),
+            ("move_dir", "radar"), ("move_dir", "MP36"), ("move_dir", "pic → tongue_image"), ("move_dir", "other"),
             ("upgrade_csv", "processed.csv"), ("upgrade_csv", "summary.csv"),
         ])
         assert all(a["status"] == "planned" for a in plan)
@@ -113,7 +113,8 @@ class TestApply:
         # 輸出：四個子夾整個搬進 patient/
         assert (output / "patient" / "radar" / f"{ENC_A}.jsonl").exists()
         assert (output / "patient" / "MP36" / f"{ENC_A}.edf").exists()
-        assert (output / "patient" / "pic" / ENC_A / f"{ENC_A}_1.jpg").exists()
+        assert (output / "patient" / "tongue_image" / ENC_A / f"{ENC_A}_1.jpg").exists()
+        assert not (output / "patient" / "pic").exists()
         assert (output / "patient" / "other" / ENC_A / "notes.txt").exists()
         assert not any((output / s).exists() for s in ("radar", "MP36", "pic", "other"))
 
@@ -148,6 +149,53 @@ class TestApply:
         assert "移動輸出子夾到 patient/：4 項" in text
         assert "升級 CSV 表頭：2 項" in text
         assert format_actions([]) == "沒有需要升級的項目。"
+
+
+class TestRenamePicToTongueImage:
+    """改名前的中間版輸出（<group>/pic/）→ <group>/tongue_image/"""
+
+    def _make_mid(self, tmp_path):
+        source = tmp_path / "source"
+        (source / "patient" / CASE_A).mkdir(parents=True)
+        _write_csv(source / "processed.csv", [PROCESSED_HEADER])
+        output = tmp_path / "output"
+        for group in ("patient", "control"):
+            (output / group / "radar").mkdir(parents=True)
+            (output / group / "pic" / ENC_A).mkdir(parents=True)
+            (output / group / "pic" / ENC_A / f"{ENC_A}_1.jpg").write_bytes(b"j")
+        _write_csv(tmp_path / "csv" / "summary.csv", [SUMMARY_HEADER])
+        return source, output, tmp_path / "csv"
+
+    def test_plan_and_apply_rename(self, tmp_path):
+        source, output, csv_dir = self._make_mid(tmp_path)
+        plan = plan_legacy_migration(str(source), str(output), str(csv_dir))
+        assert sorted((a["kind"], a["label"], a["status"]) for a in plan) == [
+            ("rename_dir", "control/pic → tongue_image", "planned"),
+            ("rename_dir", "patient/pic → tongue_image", "planned"),
+        ]
+        results = apply_legacy_migration(plan)
+        assert all(r["status"] == "done" for r in results)
+        for group in ("patient", "control"):
+            assert (output / group / "tongue_image" / ENC_A / f"{ENC_A}_1.jpg").exists()
+            assert not (output / group / "pic").exists()
+        assert plan_legacy_migration(str(source), str(output), str(csv_dir)) == []
+
+    def test_merge_into_existing_tongue_image(self, tmp_path):
+        source, output, csv_dir = self._make_mid(tmp_path)
+        (output / "patient" / "tongue_image" / ENC_A).mkdir(parents=True)
+        (output / "patient" / "tongue_image" / ENC_A / f"{ENC_A}_1.jpg").write_bytes(b"existing")
+        (output / "patient" / "pic" / ENC_B).mkdir()
+        (output / "patient" / "pic" / ENC_B / f"{ENC_B}_1.jpg").write_bytes(b"new")
+
+        results = apply_legacy_migration(plan_legacy_migration(str(source), str(output), str(csv_dir)))
+        status = {(r["kind"], r["label"]): r["status"] for r in results}
+        assert status[("move_file", f"patient/pic/{ENC_A}/{ENC_A}_1.jpg")] == "conflict"
+        assert status[("move_file", f"patient/pic/{ENC_B}/{ENC_B}_1.jpg")] == "done"
+        assert status[("rename_dir", "control/pic → tongue_image")] == "done"
+        assert (output / "patient" / "tongue_image" / ENC_A / f"{ENC_A}_1.jpg").read_bytes() == b"existing"
+        assert (output / "patient" / "tongue_image" / ENC_B / f"{ENC_B}_1.jpg").read_bytes() == b"new"
+        assert (output / "patient" / "pic" / ENC_A / f"{ENC_A}_1.jpg").exists()  # 衝突檔留原地
+        assert not (output / "patient" / "pic" / ENC_B).exists()  # 併入後空夾清掉
 
 
 class TestCliMigrate:
